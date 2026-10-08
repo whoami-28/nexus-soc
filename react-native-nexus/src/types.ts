@@ -1,5 +1,5 @@
 // src/types.ts
-export type ScreenName = 'feed' | 'thread' | 'profile';
+export type ScreenName = 'webview' | 'feed' | 'thread' | 'profile';
 
 export interface PostItem {
   id: string;

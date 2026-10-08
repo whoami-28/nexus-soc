@@ -14,14 +14,17 @@ import { ScreenName } from './src/types';
 import { FeedScreen } from './src/screens/FeedScreen';
 import { ThreadScreen } from './src/screens/ThreadScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
+import { WebViewScreen } from './src/screens/WebViewScreen';
 import { PhoneSimulator } from './src/components/PhoneSimulator';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<ScreenName>('feed');
+  const [currentScreen, setCurrentScreen] = useState<ScreenName>('webview');
   const [usePhoneFrame, setUsePhoneFrame] = useState<boolean>(true);
 
   const renderScreen = () => {
     switch (currentScreen) {
+      case 'webview':
+        return <WebViewScreen />;
       case 'feed':
         return <FeedScreen onNavigate={setCurrentScreen} />;
       case 'thread':
@@ -29,7 +32,7 @@ export default function App() {
       case 'profile':
         return <ProfileScreen onNavigate={setCurrentScreen} />;
       default:
-        return <FeedScreen onNavigate={setCurrentScreen} />;
+        return <WebViewScreen />;
     }
   };
 
@@ -38,16 +41,26 @@ export default function App() {
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
         <StatusBar barStyle="light-content" backgroundColor="#12131A" />
 
-        {/* Панель навигации между 3 макетами (для удобства проверки и презентации) */}
+        {/* Панель навигации между экранами (для ЛР 6 и предыдущих макетов) */}
         <View style={styles.topSwitcher}>
           <View style={styles.screenButtons}>
+            <TouchableOpacity
+              style={[styles.switchBtn, currentScreen === 'webview' && styles.switchBtnActive]}
+              onPress={() => setCurrentScreen('webview')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.switchText, currentScreen === 'webview' && styles.switchTextActive]}>
+                🌐 ЛР 6: WebView (GitHub Pages)
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.switchBtn, currentScreen === 'feed' && styles.switchBtnActive]}
               onPress={() => setCurrentScreen('feed')}
               activeOpacity={0.7}
             >
               <Text style={[styles.switchText, currentScreen === 'feed' && styles.switchTextActive]}>
-                📱 1. Лента (Feed)
+                📱 1. Лента
               </Text>
             </TouchableOpacity>
 
@@ -57,7 +70,7 @@ export default function App() {
               activeOpacity={0.7}
             >
               <Text style={[styles.switchText, currentScreen === 'thread' && styles.switchTextActive]}>
-                💬 2. Ветка (Thread)
+                💬 2. Ветка
               </Text>
             </TouchableOpacity>
 
@@ -67,7 +80,7 @@ export default function App() {
               activeOpacity={0.7}
             >
               <Text style={[styles.switchText, currentScreen === 'profile' && styles.switchTextActive]}>
-                👤 3. Профиль (Profile)
+                👤 3. Профиль
               </Text>
             </TouchableOpacity>
           </View>
