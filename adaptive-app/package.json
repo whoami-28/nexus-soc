@@ -1,0 +1,24 @@
+{
+  "name": "adaptive-app",
+  "version": "1.0.0",
+  "description": "Адаптивное мобильное приложение NEXUS с подключением библиотеки cowsay",
+  "main": "cow.js",
+  "scripts": {
+    "start": "node cow.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mobile",
+    "adaptive",
+    "flexbox",
+    "grid",
+    "cowsay",
+    "nexus"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cowsay": "^1.6.0"
+  }
+}

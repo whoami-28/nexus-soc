@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEXUS — Адаптивное мобильное приложение</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Панель переключения режима: Адаптивный (для проверки Media Query 1200px / 768px / 375px) или Фиксированный телефон -->
+  <div class="viewport-controls">
+    <button class="mode-btn active" id="btnAdaptiveMode" type="button">
+      🖥️ Адаптивный режим (1200px / 768px / 375px)
+    </button>
+    <button class="mode-btn" id="btnPhoneMode" type="button">
+      📱 Только смартфон (390px)
+    </button>
+  </div>
+
+  <div class="stage">
+    <!-- Декоративные фоновые сферы из макета -->
+    <div class="ambient-orb orb-left" aria-hidden="true"></div>
+    <div class="ambient-orb orb-right" aria-hidden="true"></div>
+
+    <!-- Рамка устройства, имитирующая телефон / кибер-терминал -->
+    <div class="phone-frame" id="phoneFrame">
+      <!-- Боковые кнопки корпуса телефона -->
+      <div class="hw-btn hw-btn-mute" aria-hidden="true"></div>
+      <div class="hw-btn hw-btn-vol-up" aria-hidden="true"></div>
+      <div class="hw-btn hw-btn-vol-down" aria-hidden="true"></div>
+      <div class="hw-btn hw-btn-power" aria-hidden="true"></div>
+
+      <!-- Верхний динамик и глазок камеры -->
+      <div class="phone-notch" aria-hidden="true">
+        <span class="speaker-grill"></span>
+        <span class="camera-lens"></span>
+      </div>
+
+      <!-- Экран мобильного приложения -->
+      <div class="phone-screen">
+
+        <!-- 1. Шапка с названием приложения и навигационным меню -->
+        <header class="app-header">
+          <div class="header-top">
+            <div class="brand">
+              <div class="brand-logo">
+                <img src="assets/logo.png" alt="Логотип NEXUS">
+              </div>
+              <span class="brand-title">NEXUS</span>
+            </div>
+
+            <div class="header-actions">
+              <button class="icon-circle-btn" type="button" aria-label="Уведомления">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <span class="status-dot dot-mint"></span>
+              </button>
+
+              <button class="icon-circle-btn" type="button" aria-label="Сообщения">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  <line x1="8" y1="9" x2="16" y2="9"></line>
+                  <line x1="8" y1="13" x2="13" y2="13"></line>
+                </svg>
+                <span class="status-dot dot-purple"></span>
+              </button>
+
+              <button class="profile-trigger" type="button" aria-label="Профиль пользователя">
+                <img src="assets/avatar-user.png" alt="Аватар пользователя">
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. Навигационное меню (адаптируется через Flexbox и Media Query) -->
+          <nav class="main-nav" aria-label="Навигационное меню">
+            <button class="nav-link active" type="button">
+              <svg class="pill-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+              </svg>
+              <span>В тренде</span>
+            </button>
+
+            <button class="nav-link" type="button">
+              <svg class="pill-icon icon-blue" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+              </svg>
+              <span>Подписки</span>
+            </button>
+
+            <button class="nav-link" type="button">
+              <svg class="pill-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9"></circle>
+                <line x1="3.6" y1="9" x2="20.4" y2="9"></line>
+                <line x1="3.6" y1="15" x2="20.4" y2="15"></line>
+                <path d="M11.5 3a17 17 0 0 0 0 18"></path>
+                <path d="M12.5 3a17 17 0 0 1 0 18"></path>
+              </svg>
+              <span>Все</span>
+            </button>
+
+            <button class="nav-link" type="button">
+              <span class="book-icon" aria-hidden="true">📓</span>
+              <span>Технологии</span>
+            </button>
+          </nav>
+        </header>
+
+        <!-- Основной контент приложения -->
+        <main class="app-content">
+
+          <!-- 3. Основной заголовок страницы (Трансляция подпространства) -->
+          <section class="subspace-banner">
+            <div class="banner-top">
+              <div class="banner-label">
+                <span class="pulse-dot"></span>
+                <h1 class="main-heading">ТРАНСЛЯЦИЯ ПОДПРОСТРАНСТВА</h1>
+              </div>
+              <span class="node-tag">УЗЕЛ #882</span>
+            </div>
+            <p class="banner-text">
+              Развертывание Nexus Kernel 4.19 сегодня ночью. Низколатентная синхронизация векторов по всем узлам.
+            </p>
+          </section>
+
+          <!-- 4. Сетка карточек (не менее трёх карточек: 3 колонки на большом экране, 2 на планшете, 1 на смартфоне) -->
+          <section class="cards" aria-label="Лента публикаций и задач">
+
+            <!-- Карточка 1: @kira_valkyrie -->
+            <article class="card post-card">
+              <header class="post-header">
+                <div class="author-avatar">
+                  <img src="assets/avatar-kira.png" alt="@kira_valkyrie">
+                </div>
+
+                <div class="author-meta">
+                  <div class="author-name-row">
+                    <span class="author-handle">@kira_valkyri</span>
+                    <span class="verified-badge" title="Верифицированный узел">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 2L14.8 4.5L18.5 4.2L19.5 7.8L22.5 10L21.2 13.5L22.5 17L19.5 19.2L18.5 22.8L14.8 22.5L12 25L9.2 22.5L5.5 22.8L4.5 19.2L1.5 17L2.8 13.5L1.5 10L4.5 7.8L5.5 4.2L9.2 4.5L12 2Z" transform="scale(0.88) translate(1.6, 0.5)" fill="#00F5A0"/>
+                        <path d="M8.5 12.5L10.8 14.8L15.5 9.8" stroke="#062016" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                  </div>
+
+                  <div class="author-sub-row">
+                    <span class="post-time">12 мин<br>назад</span>
+                    <span class="meta-sep">•</span>
+                    <span class="author-rank rank-purple">SysOp<br>Уровень 5</span>
+                  </div>
+                </div>
+
+                <span class="topic-badge">C/NEURAL-NET</span>
+
+                <button class="more-btn" type="button" aria-label="Меню публикации">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="5" r="1.8"></circle>
+                    <circle cx="12" cy="12" r="1.8"></circle>
+                    <circle cx="12" cy="19" r="1.8"></circle>
+                  </svg>
+                </button>
+              </header>
+
+              <p class="post-body">
+                Утекли бенчмарки квантового синтеза GPT-5. Имеем ли мы дело с автономной субъектностью или масштабированным вероятностным выводом? График задержки ниже 👇
+              </p>
+
+              <!-- Виджет телеметрии -->
+              <div class="telemetry-widget">
+                <div class="telemetry-header">
+                  <div class="terminal-dots">
+                    <span class="t-dot dot-violet"></span>
+                    <span class="t-dot dot-amber"></span>
+                    <span class="t-dot dot-emerald"></span>
+                    <span class="telemetry-title">ЛОГ_ТЕЛЕМЕТРИИ</span>
+                  </div>
+                  <span class="live-indicator">ПРЯМОЙ_ЭФИР</span>
+                </div>
+
+                <div class="telemetry-code">
+                  <div class="code-line-mint">latency_ms: 1.4 // throughput: 240 t/s // co</div>
+                  <div class="code-line-sub">
+                    <span class="code-key">&gt; delta_compression:</span>
+                    <span class="code-val">0.0031ns [OPTIMAL]</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- График затухания задержки -->
+              <div class="chart-widget">
+                <div class="chart-header">
+                  <span class="chart-title">ЗАТУХАНИЕ ЗАДЕРЖКИ</span>
+                  <span class="chart-delta">-42% по сравнению с SOTA</span>
+                </div>
+
+                <div class="chart-canvas">
+                  <svg viewBox="0 0 300 72" preserveAspectRatio="none" class="wave-svg">
+                    <defs>
+                      <linearGradient id="mintAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#00F5A0" stop-opacity="0.24" />
+                        <stop offset="100%" stop-color="#00F5A0" stop-opacity="0.02" />
+                      </linearGradient>
+                      <filter id="mintGlow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feGaussianBlur stdDeviation="2.2" result="blur" />
+                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                      </filter>
+                    </defs>
+
+                    <path
+                      d="M 0,55 C 25,54 45,58 75,54 C 105,50 125,49 145,45 C 165,40 175,20 192,20 C 209,20 222,55 240,56 C 256,57 264,5 275,5 C 284,5 291,26 296,26 L 296,70 L 0,70 Z"
+                      fill="url(#mintAreaGrad)"
+                    />
+                    <path
+                      d="M 0,55 C 25,54 45,58 75,54 C 105,50 125,49 145,45 C 165,40 175,20 192,20 C 209,20 222,55 240,56 C 256,57 264,5 275,5 C 284,5 291,26 296,26"
+                      fill="none"
+                      stroke="#00F5A0"
+                      stroke-width="2.2"
+                      stroke-linecap="round"
+                      filter="url(#mintGlow)"
+                    />
+                    <circle cx="296" cy="26" r="3.5" fill="#00F5A0" filter="url(#mintGlow)" />
+                  </svg>
+                </div>
+              </div>
+
+              <footer class="post-footer">
+                <div class="footer-left">
+                  <div class="action-pill vote-pill">
+                    <button class="vote-btn up active" type="button" aria-label="Поддержать">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                      </svg>
+                      <span class="vote-count">+2.4k</span>
+                    </button>
+                    <span class="vote-divider"></span>
+                    <button class="vote-btn down" type="button" aria-label="Против">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"></path>
+                      </svg>
+                    </button>
+                  </div>
+
+                  <button class="action-pill" type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span>342</span>
+                  </button>
+
+                  <button class="action-pill" type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="17 1 21 5 17 9"></polyline>
+                      <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                      <polyline points="7 23 3 19 7 15"></polyline>
+                      <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+                    </svg>
+                    <span>89</span>
+                  </button>
+                </div>
+
+                <div class="footer-right">
+                  <button class="icon-plain-btn" type="button" aria-label="Поделиться">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="18" cy="5" r="3"></circle>
+                      <circle cx="6" cy="12" r="3"></circle>
+                      <circle cx="18" cy="19" r="3"></circle>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                    </svg>
+                  </button>
+
+                  <button class="icon-plain-btn bookmark-toggle" type="button" aria-label="В закладки">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                  </button>
+                </div>
+              </footer>
+            </article>
+
+            <!-- Карточка 2: @zeno_flux -->
+            <article class="card post-card">
+              <header class="post-header">
+                <div class="author-avatar">
+                  <img src="assets/avatar-zeno.png" alt="@zeno_flux">
+                </div>
+
+                <div class="author-meta">
+                  <div class="author-name-row">
+                    <span class="author-handle">@zeno_flux</span>
+                  </div>
+
+                  <div class="author-sub-row">
+                    <span class="post-time">45 мин<br>назад</span>
+                    <span class="meta-sep">•</span>
+                    <span class="author-rank rank-mint">Ключевой<br>участник</span>
+                  </div>
+                </div>
+
+                <span class="topic-badge">C/CYBERPUNK-DEV</span>
+
+                <button class="more-btn" type="button" aria-label="Меню публикации">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="5" r="1.8"></circle>
+                    <circle cx="12" cy="12" r="1.8"></circle>
+                    <circle cx="12" cy="19" r="1.8"></circle>
+                  </svg>
+                </button>
+              </header>
+
+              <p class="post-body">
+                Чистый темный UI со стеклянными карточками и неоново-мятными акцентами — пик эстетики для обсуждений разработчиков. Как вам наш новый интерфейс форума?
+              </p>
+
+              <!-- Медиа-превью с голографическим интерфейсом -->
+              <div class="media-preview">
+                <img src="assets/nexus-preview.png" alt="Спецификация Nexus Engine v2.4" class="media-img">
+                <div class="media-overlay">
+                  <div class="spec-pill">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#00F5A0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                      <rect x="14" y="3" width="7" height="5" rx="1"></rect>
+                      <rect x="14" y="12" width="7" height="9" rx="1"></rect>
+                      <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                    </svg>
+                    <span>Спецификация Nexus Engine v2.4</span>
+                  </div>
+
+                  <span class="fps-pill">120 FPS</span>
+                </div>
+              </div>
+
+              <footer class="post-footer">
+                <div class="footer-left">
+                  <div class="action-pill vote-pill">
+                    <button class="vote-btn up" type="button" aria-label="Поддержать">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                      </svg>
+                      <span class="vote-count">+1.8k</span>
+                    </button>
+                    <span class="vote-divider"></span>
+                    <button class="vote-btn down" type="button" aria-label="Против">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"></path>
+                      </svg>
+                    </button>
+                  </div>
+
+                  <button class="action-pill" type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span>128</span>
+                  </button>
+
+                  <button class="action-pill" type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="17 1 21 5 17 9"></polyline>
+                      <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                      <polyline points="7 23 3 19 7 15"></polyline>
+                      <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+                    </svg>
+                    <span>41</span>
+                  </button>
+                </div>
+
+                <div class="footer-right">
+                  <button class="icon-plain-btn" type="button" aria-label="Поделиться">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="18" cy="5" r="3"></circle>
+                      <circle cx="6" cy="12" r="3"></circle>
+                      <circle cx="18" cy="19" r="3"></circle>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                    </svg>
+                  </button>
+
+                  <button class="bookmark-fab-btn bookmark-toggle saved" type="button" aria-label="Сохранено в закладки">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="#D8B4FE" stroke="#D8B4FE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                  </button>
+                </div>
+              </footer>
+            </article>
+
+            <!-- Карточка 3: Награда подпространства (Bounty & Kernel Patch) -->
+            <article class="card post-card bounty-full-card">
+              <div class="bounty-row">
+                <div class="bounty-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path d="M11 3L12.8 8.2L18 10L12.8 11.8L11 17L9.2 11.8L4 10L9.2 8.2L11 3Z" stroke="#E9D5FF" stroke-width="1.8" stroke-linejoin="round"/>
+                    <path d="M18.5 15L19.3 17.2L21.5 18L19.3 18.8L18.5 21L17.7 18.8L15.5 18L17.7 17.2L18.5 15Z" fill="#E9D5FF"/>
+                  </svg>
+                </div>
+
+                <div class="bounty-info">
+                  <h2 class="bounty-title">Награда подпространства</h2>
+                  <p class="bounty-desc">Устранить состояние гонки памяти</p>
+                </div>
+
+                <button class="bounty-btn" type="button">Обзор</button>
+              </div>
+
+              <!-- Дополнительные детали для широкоэкранного режима карточек -->
+              <div class="bounty-extra">
+                <p class="post-body">
+                  Обнаружена десинхронизация буфера при параллельной передаче квантовых тензоров в ядре <code>Kernel 4.19</code>. Требуется атомарный патч блокировки.
+                </p>
+
+                <div class="telemetry-widget">
+                  <div class="telemetry-header">
+                    <div class="terminal-dots">
+                      <span class="t-dot dot-violet"></span>
+                      <span class="t-dot dot-amber"></span>
+                      <span class="t-dot dot-emerald"></span>
+                      <span class="telemetry-title">СТАТУС_БАУНТИ</span>
+                    </div>
+                    <span class="live-indicator">+2,500 NEX</span>
+                  </div>
+                  <div class="telemetry-code">
+                    <div class="code-line-mint">target: mem_lock_v4.rs // threads: 64</div>
+                    <div class="code-line-sub">
+                      <span class="code-key">&gt; verification:</span>
+                      <span class="code-val">94.8% узлов подтвердили</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+          </section>
+
+          <!-- 5. Кнопка действия и интерактивный вывод телеметрии -->
+          <section class="action-section" aria-label="Управление синхронизацией">
+            <button class="cta-btn" id="syncNodeBtn" type="button">
+              ⚡ Синхронизировать узел #882
+            </button>
+            <div class="sync-output" id="syncStatusOutput" role="status" aria-live="polite"></div>
+          </section>
+
+        </main>
+
+        <!-- 6. Нижняя часть страницы (Footer + Нижняя панель навигации) -->
+        <footer class="app-footer">
+          <nav class="bottom-nav" aria-label="Нижняя панель приложения">
+            <button class="nav-item active" type="button" aria-label="Лента">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="7" y="3" width="12" height="14" rx="2"></rect>
+                <path d="M4 7v11a2 2 0 0 0 2 2h10"></path>
+              </svg>
+              <span class="nav-active-dot"></span>
+            </button>
+
+            <button class="nav-fab-add" id="fabAddBtn" type="button" aria-label="Создать публикацию">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#041E13" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+
+            <button class="nav-item nav-profile" type="button" aria-label="Профиль">
+              <div class="nav-avatar-ring">
+                <img src="assets/avatar-user.png" alt="Профиль">
+              </div>
+            </button>
+          </nav>
+
+          <p class="footer-copy">
+            NEXUS Subspace Network • Kernel 4.19 • Узел #882
+          </p>
+        </footer>
+
+      </div>
+
+      <!-- Нижний индикатор домашнего экрана -->
+      <div class="phone-home-bar" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
