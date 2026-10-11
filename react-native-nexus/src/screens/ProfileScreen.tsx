@@ -73,9 +73,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onSele
   const handleSettings = () => {
     Alert.alert(
       'Настройки ядра NEXUS',
-      'Управление локальной базой данных SQLite на устройстве.',
+      'Управление приложением и базой данных SQLite.',
       [
         { text: 'Отмена', style: 'cancel' },
+        {
+          text: '🌐 Открыть WebView (ЛР6)',
+          onPress: () => onNavigate('webview'),
+        },
         {
           text: 'Сбросить базу данных (Reset DB)',
           style: 'destructive',

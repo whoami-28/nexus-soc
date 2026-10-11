@@ -14,12 +14,14 @@ import { colors } from '../theme/colors';
 interface WebViewScreenProps {
   url?: string;
   onRefresh?: () => void;
+  onBack?: () => void;
 }
 
 export const GITHUB_PAGES_URL = 'https://whoami-28.github.io/nexus-soc/';
 
 export const WebViewScreen: React.FC<WebViewScreenProps> = ({
   url = GITHUB_PAGES_URL,
+  onBack,
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<boolean>(false);
@@ -56,10 +58,15 @@ export const WebViewScreen: React.FC<WebViewScreenProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.statusBarMock}>
-        <Text style={styles.statusBadge}>🌐 GITHUB PAGES WEBVIEW</Text>
+        {onBack && (
+          <TouchableOpacity onPress={onBack} style={styles.backBtn} activeOpacity={0.7}>
+            <Text style={styles.backBtnText}>← Назад</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={styles.statusBadge}>🌐 WEBVIEW</Text>
         <Text style={styles.statusUrl} numberOfLines={1}>{url}</Text>
         <TouchableOpacity onPress={reloadPage} style={styles.reloadBtn}>
-          <Text style={styles.reloadBtnText}>↻ Обновить</Text>
+          <Text style={styles.reloadBtnText}>↻</Text>
         </TouchableOpacity>
       </View>
 
@@ -131,6 +138,17 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     color: '#94A3B8',
+  },
+  backBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#1E212E',
+  },
+  backBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#E2E8F0',
   },
   reloadBtn: {
     paddingHorizontal: 8,
