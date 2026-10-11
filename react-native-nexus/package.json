@@ -8,10 +8,7 @@
     "start:tunnel": "expo start --tunnel",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web",
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "web": "expo start --web"
   },
   "keywords": [
     "react-native",
@@ -38,8 +35,6 @@
     "@babel/core": "^7.25.2",
     "@expo/ngrok": "^4.1.3",
     "@types/react": "~19.2.4",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "~6.0.3",
-    "vite": "^6.2.0"
+    "typescript": "~6.0.3"
   }
 }

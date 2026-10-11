@@ -1,7 +1,6 @@
 # Dependencies
 node_modules/
 react-native-nexus/node_modules/
-adaptive-app/node_modules/
 
 # Expo & Metro
 .expo/
