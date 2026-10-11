@@ -1,20 +1,20 @@
 ﻿[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "NEXUS Mobile App — Запуск проекта"
 
-$projectDir = $PSScriptRoot
-if (Test-Path (Join-Path $PSScriptRoot "react-native-nexus\package.json")) {
-    $projectDir = Join-Path $PSScriptRoot "react-native-nexus"
+$projectDir = Join-Path $PSScriptRoot "react-native-nexus"
+if (-not (Test-Path (Join-Path $projectDir "package.json"))) {
+    $projectDir = $PSScriptRoot
 }
 Set-Location $projectDir
 
 function Show-Menu {
     Clear-Host
     Write-Host "======================================================================" -ForegroundColor Cyan
-    Write-Host "               NEXUS — React Native Mobile Application" -ForegroundColor White
-    Write-Host "                  (Expo SDK 57 / React 19 / Metro)" -ForegroundColor DarkGray
+    Write-Host "           NEXUS — React Native Mobile App (SQLite Engine)" -ForegroundColor White
+    Write-Host "              (Expo SDK 57 / React 19 / expo-sqlite / Metro)" -ForegroundColor DarkGray
     Write-Host "======================================================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  Выберите вариант запуска:" -ForegroundColor Yellow
+    Write-Host "  Выберите вариант запуска для смартфона:" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "  [1] Телефон: Expo Go через облачный туннель (Рекомендуется)" -ForegroundColor Green
     Write-Host "      - Работает на любом телефоне (Android / iPhone)" -ForegroundColor Gray
@@ -23,10 +23,8 @@ function Show-Menu {
     Write-Host "  [2] Телефон: Expo Go по локальной сети Wi-Fi" -ForegroundColor White
     Write-Host "      - Телефон и компьютер должны быть в одной сети Wi-Fi" -ForegroundColor Gray
     Write-Host ""
-    Write-Host "  [3] Компьютер: Мгновенный запуск в браузере (React Native Web)" -ForegroundColor White
-    Write-Host "      - Открывается на ПК в браузере с симулятором рамки смартфона" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "  [4] Проверка зависимостей и сборки (Expo Doctor)" -ForegroundColor White
+    Write-Host "  [3] Проверка TypeScript и сборки Metro (Expo Doctor & TSC)" -ForegroundColor White
+    Write-Host "      - Проверка компиляции и валидация модулей" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  [0] Выход" -ForegroundColor DarkGray
     Write-Host ""
@@ -35,7 +33,7 @@ function Show-Menu {
 
 while ($true) {
     Show-Menu
-    $choice = Read-Host "Введите номер действия [1, 2, 3, 4, 0] и нажмите Enter"
+    $choice = Read-Host "Введите номер действия [1, 2, 3, 0] и нажмите Enter"
     switch ($choice.Trim()) {
         "1" {
             Clear-Host
@@ -55,16 +53,11 @@ while ($true) {
         }
         "3" {
             Clear-Host
-            Write-Host "[Запуск] Запуск локального dev-сервера React Native Web..." -ForegroundColor Cyan
-            Write-Host "Открываем браузер: http://localhost:3000`n" -ForegroundColor Green
-            Start-Process "http://localhost:3000"
-            npm run dev
-            Write-Host "`nНажмите любую клавишу для возврата в меню..." -ForegroundColor DarkGray
-            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-        }
-        "4" {
-            Clear-Host
-            Write-Host "[Проверка] Проверка совместимости зависимостей Expo SDK 57...`n" -ForegroundColor Yellow
+            Write-Host "[Проверка] Проверка TypeScript и зависимостей Expo SDK 57...`n" -ForegroundColor Yellow
+            npx tsc --noEmit
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "TypeScript: 0 ошибок компиляции [OK]" -ForegroundColor Green
+            }
             npx expo install --check
             Write-Host "`nНажмите любую клавишу для возврата в меню..." -ForegroundColor DarkGray
             $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

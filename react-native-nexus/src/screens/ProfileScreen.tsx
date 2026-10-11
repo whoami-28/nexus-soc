@@ -1,5 +1,5 @@
 // src/screens/ProfileScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import {
@@ -15,8 +18,7 @@ import {
   SettingsGearIcon,
   SparkleIcon,
   MoreDotsIcon,
-  ArrowUpVoteIcon,
-  ArrowDownVoteIcon,
+  ThumbsUpIcon,
   ChatBubbleIcon,
   BookmarkIcon,
   ShareIcon,
@@ -24,22 +26,83 @@ import {
 } from '../components/SvgIcons';
 import { Header } from '../components/Header';
 import { BottomNav } from '../components/BottomNav';
-import { ScreenName } from '../types';
+import { ScreenName, PostItem } from '../types';
+import { useDatabase } from '../context/DatabaseContext';
+import { getUserPosts, getBookmarkedPosts } from '../database/postsRepository';
+import { getAvatarSource, getMediaSource } from '../utils/assets';
+import { EditProfileModal } from './EditProfileModal';
+import { CreatePostModal } from './CreatePostModal';
 
 interface ProfileScreenProps {
   onNavigate: (screen: ScreenName) => void;
+  onSelectPost?: (postId: string) => void;
 }
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate }) => {
-  const [activeTab, setActiveTab] = useState<'threads' | 'replies' | 'media' | 'upvotes' | 'saved'>('threads');
-  const [post1Voted, setPost1Voted] = useState(false);
-  const [post2Voted, setPost2Voted] = useState(false);
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate, onSelectPost }) => {
+  const { currentUser, dataVersion, resetDB } = useDatabase();
+
+  const [activeTab, setActiveTab] = useState<'posts' | 'saved' | 'audits'>('posts');
+  const [userPosts, setUserPosts] = useState<PostItem[]>([]);
+  const [savedPosts, setSavedPosts] = useState<PostItem[]>([]);
+  const [isLoadingTab, setIsLoadingTab] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  const loadTabData = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      setIsLoadingTab(true);
+      if (activeTab === 'posts') {
+        const items = await getUserPosts(currentUser.id, currentUser.id);
+        setUserPosts(items);
+      } else if (activeTab === 'saved') {
+        const items = await getBookmarkedPosts(currentUser.id);
+        setSavedPosts(items);
+      }
+    } catch (err) {
+      console.error('[ProfileScreen] Ошибка загрузки постов профиля:', err);
+    } finally {
+      setIsLoadingTab(false);
+    }
+  }, [currentUser, activeTab]);
+
+  useEffect(() => {
+    loadTabData();
+  }, [loadTabData, dataVersion]);
+
+  const handleSettings = () => {
+    Alert.alert(
+      'Настройки ядра NEXUS',
+      'Управление локальной базой данных SQLite на устройстве.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Сбросить базу данных (Reset DB)',
+          style: 'destructive',
+          onPress: async () => {
+            await resetDB();
+            Alert.alert('Успех', 'База данных пересоздана и наполнена начальными данными.');
+          },
+        },
+      ]
+    );
+  };
+
+  const openThread = (postId: string) => {
+    if (onSelectPost) {
+      onSelectPost(postId);
+    }
+    onNavigate('thread');
+  };
+
+  const displayedPosts = activeTab === 'saved' ? savedPosts : userPosts;
 
   return (
     <View style={styles.container}>
       <Header
-        onPressProfile={() => onNavigate('profile')}
+        onPressProfile={() => {}}
         onPressLogo={() => onNavigate('feed')}
+        onOpenPost={openThread}
       />
 
       <ScrollView
@@ -51,33 +114,46 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate }) => {
         <View style={styles.profileHero}>
           <View style={styles.avatarWrap}>
             <Image
-              source={require('../../assets/avatar-elena-large.png')}
+              source={getAvatarSource(currentUser?.avatar_key)}
               style={styles.largeAvatar}
             />
           </View>
 
           <View style={styles.profileActionBtns}>
-            <TouchableOpacity style={styles.editBtn} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.editBtn}
+              onPress={() => setShowEditModal(true)}
+              activeOpacity={0.7}
+            >
               <EditPencilIcon size={12} color={colors.mint} />
               <Text style={styles.editBtnText}>Редактировать</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.settingsBtn} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.settingsBtn}
+              onPress={handleSettings}
+              activeOpacity={0.7}
+            >
               <SettingsGearIcon size={16} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Имя, тег и биография */}
+        {/* Имя, тег и биография из SQLite */}
         <View style={styles.profileBioBox}>
           <View style={styles.nameRow}>
-            <Text style={styles.userName}>Elena Rostova</Text>
-            <VerifiedBadge size={16} />
+            <Text style={styles.userName}>{currentUser?.name || 'Elena Rostova'}</Text>
+            {currentUser?.verified && <VerifiedBadge size={16} />}
           </View>
-          <Text style={styles.userHandle}>@elena_dev</Text>
+          <Text style={styles.userHandle}>{currentUser?.handle || '@elena_dev'}</Text>
           <Text style={styles.userBio}>
-            Фулстек AI-архитектор и дизайнер кибер-минималистичных интерфейсов. Создаю децентрализованные нейрофорумы
+            {currentUser?.bio || 'Фулстек AI-архитектор и криптоаналитик...'}
           </Text>
+
+          <View style={styles.statusRow}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusText}>{currentUser?.status_label || 'ONLINE'}</Text>
+          </View>
         </View>
 
         {/* Карточка протокола кармы NEXUS */}
@@ -90,225 +166,160 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate }) => {
 
             <View style={styles.topAuthorPill}>
               <SparkleIcon size={11} color={colors.mint} />
-              <Text style={styles.topAuthorText}>Топ 1% авторов</Text>
+              <Text style={styles.topAuthorText}>Узел валидатора v4.2</Text>
             </View>
           </View>
 
           <View style={styles.scoreRow}>
-            <Text style={styles.scoreNumber}>48,920 </Text>
+            <Text style={styles.scoreNumber}>
+              {currentUser?.rep_score ? currentUser.rep_score.toLocaleString() : '48,920'}{' '}
+            </Text>
             <Text style={styles.scoreUnit}>РЕП</Text>
           </View>
 
-          {/* 3 под-метрики */}
-          <View style={styles.metricsGrid}>
-            <View style={styles.metricItem}>
-              <Text style={styles.mLabel}>Апвоуты</Text>
-              <Text style={styles.mValue}>124.5k</Text>
-              <Text style={styles.mDelta}>📈 +12%</Text>
+          <Text style={styles.scoreSubtext}>
+            +14.2% за цикл • Синхронизировано с локальным блоком SQLite
+          </Text>
+
+          {/* Сетка счетчиков */}
+          <View style={styles.statsGrid}>
+            <View style={styles.statBox}>
+              <Text style={styles.statNumber}>
+                {currentUser?.audits_count ? `${(currentUser.audits_count / 1000).toFixed(1)}k` : '1.4k'}
+              </Text>
+              <Text style={styles.statLabel}>ПРОВЕРЕНО</Text>
             </View>
 
-            <View style={styles.metricItem}>
-              <Text style={styles.mLabel}>Решения</Text>
-              <Text style={styles.mValue}>86</Text>
-              <Text style={styles.mSubMuted}>✔ 98.2%</Text>
+            <View style={styles.statBox}>
+              <Text style={styles.statNumber}>{currentUser?.bounties_count || 98}</Text>
+              <Text style={styles.statLabel}>НАГРАДЫ</Text>
             </View>
 
-            <View style={styles.metricItem}>
-              <Text style={styles.mLabel}>Влияние</Text>
-              <Text style={styles.mValue}>Мастер</Text>
-              <Text style={styles.mRank}>Ранг IV</Text>
+            <View style={styles.statBox}>
+              <Text style={styles.statNumber}>
+                {currentUser?.commits_count ? `${(currentUser.commits_count / 1000).toFixed(1)}k` : '4.8k'}
+              </Text>
+              <Text style={styles.statLabel}>ВКЛАДЫ</Text>
             </View>
-          </View>
-        </View>
 
-        {/* Счетчики активности: Подписки, Подписчики, Ветки, Значки */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCol}>
-            <Text style={styles.statCount}>1,420</Text>
-            <Text style={styles.statLabel}>Подписки</Text>
-          </View>
-
-          <View style={styles.statCol}>
-            <Text style={styles.statCount}>18.6k</Text>
-            <Text style={styles.statLabel}>Подписчики</Text>
-          </View>
-
-          <View style={styles.statCol}>
-            <Text style={styles.statCount}>248</Text>
-            <Text style={styles.statLabel}>Ветки</Text>
-          </View>
-
-          <View style={styles.statCol}>
-            <Text style={[styles.statCount, { color: colors.purpleLight }]}>14</Text>
-            <Text style={styles.statLabel}>Значки</Text>
+            <View style={styles.statBox}>
+              <Text style={styles.statNumberMint}>{currentUser?.network_rank || '#42'}</Text>
+              <Text style={styles.statLabel}>РАНГ СЕТИ</Text>
+            </View>
           </View>
         </View>
 
         {/* Вкладки профиля */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.tabsScroll}
-          contentContainerStyle={styles.tabsContent}
-        >
+        <View style={styles.tabsRow}>
           <TouchableOpacity
-            style={[styles.tabBtn, activeTab === 'threads' && styles.tabBtnActive]}
-            onPress={() => setActiveTab('threads')}
+            style={[styles.tabBtn, activeTab === 'posts' && styles.tabBtnActive]}
+            onPress={() => setActiveTab('posts')}
+            activeOpacity={0.7}
           >
-            <Text style={[styles.tabBtnText, activeTab === 'threads' && styles.tabBtnTextActive]}>
-              Ветки
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, activeTab === 'replies' && styles.tabBtnActive]}
-            onPress={() => setActiveTab('replies')}
-          >
-            <Text style={[styles.tabBtnText, activeTab === 'replies' && styles.tabBtnTextActive]}>
-              Ответы
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, activeTab === 'media' && styles.tabBtnActive]}
-            onPress={() => setActiveTab('media')}
-          >
-            <Text style={[styles.tabBtnText, activeTab === 'media' && styles.tabBtnTextActive]}>
-              Медиа
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabBtn, activeTab === 'upvotes' && styles.tabBtnActive]}
-            onPress={() => setActiveTab('upvotes')}
-          >
-            <Text style={[styles.tabBtnText, activeTab === 'upvotes' && styles.tabBtnTextActive]}>
-              Оценки
+            <Text style={[styles.tabText, activeTab === 'posts' && styles.tabTextActive]}>
+              Трансляции
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.tabBtn, activeTab === 'saved' && styles.tabBtnActive]}
             onPress={() => setActiveTab('saved')}
+            activeOpacity={0.7}
           >
-            <Text style={[styles.tabBtnText, activeTab === 'saved' && styles.tabBtnTextActive]}>
-              Сохранено
+            <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>
+              Закладки ({savedPosts.length})
             </Text>
           </TouchableOpacity>
-        </ScrollView>
-
-        {/* Посты профиля */}
-        <View style={styles.postsList}>
-
-          {/* Пост 1: Проектирование UI-пайплайнов */}
-          <View style={styles.profilePostCard}>
-            <View style={styles.pHeader}>
-              <View style={styles.pTagPurple}>
-                <Text style={styles.pTagPurpleText}>c/neural-net</Text>
-              </View>
-              <Text style={styles.pMetaTime}>• 3 дня назад</Text>
-              <TouchableOpacity style={styles.pMoreBtn}>
-                <MoreDotsIcon size={14} color={colors.textMuted} horizontal />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.pTitle}>
-              Проектирование UI-пайплайнов с нулевой задержкой для пространственного аудио на Rust & WebAudio API
-            </Text>
-
-            <Text style={styles.pSnippet}>
-              Мы устранили проблемы межпоточной синхронизации в распределенных голосовых...
-            </Text>
-
-            <View style={styles.pFooter}>
-              <View style={styles.pFooterLeft}>
-                <TouchableOpacity
-                  style={[styles.pVotePill, post1Voted && styles.pVotePillActive]}
-                  onPress={() => setPost1Voted(!post1Voted)}
-                >
-                  <ArrowUpVoteIcon size={12} color={colors.mint} />
-                  <Text style={styles.pVoteText}>{post1Voted ? '3.2k' : '3.1k'}</Text>
-                  <ArrowDownVoteIcon size={12} color={colors.textMuted} />
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.pCommentBtn}>
-                  <ChatBubbleIcon size={13} color={colors.textMuted} />
-                  <Text style={styles.pCommentCount}>214</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.pFooterRight}>
-                <TouchableOpacity style={styles.pIconBtn}>
-                  <BookmarkIcon size={15} color={colors.textMuted} />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.pIconBtn}>
-                  <ShareIcon size={15} color={colors.textMuted} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
-          {/* Пост 2: WebGL-шейдеры темной темы */}
-          <View style={styles.profilePostCard}>
-            <View style={styles.pHeader}>
-              <View style={styles.pTagMint}>
-                <Text style={styles.pTagMintText}>c/cyberpunk-dev</Text>
-              </View>
-              <Text style={styles.pMetaTime}>• 1 нед. назад</Text>
-              <TouchableOpacity style={styles.pMoreBtn}>
-                <MoreDotsIcon size={14} color={colors.textMuted} horizontal />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.pTitle}>
-              Опубликовали в опенсорс тулкит WebGL-шейдеров темной темы для высокочастотных мобильных форумов
-            </Text>
-
-            <Text style={styles.pSnippet}>
-              Включает калиброванное неоновое свечение, фильтры шума и слои дисперсии стекла,...
-            </Text>
-
-            {/* Изображение шейдеров с ссылкой на github */}
-            <View style={styles.pMediaBox}>
-              <Image source={require('../../assets/glsl-preview.png')} style={styles.pMediaImg} />
-              <View style={styles.githubPill}>
-                <CodeBracketsIcon size={13} color={colors.mint} />
-                <Text style={styles.githubText}>github.com/nexus/glsl-neon-kit</Text>
-              </View>
-            </View>
-
-            <View style={styles.pFooter}>
-              <View style={styles.pFooterLeft}>
-                <TouchableOpacity
-                  style={[styles.pVotePill, post2Voted && styles.pVotePillActive]}
-                  onPress={() => setPost2Voted(!post2Voted)}
-                >
-                  <ArrowUpVoteIcon size={12} color={colors.mint} />
-                  <Text style={styles.pVoteText}>{post2Voted ? '5.9k' : '5.8k'}</Text>
-                  <ArrowDownVoteIcon size={12} color={colors.textMuted} />
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.pCommentBtn}>
-                  <ChatBubbleIcon size={13} color={colors.textMuted} />
-                  <Text style={styles.pCommentCount}>480</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.pFooterRight}>
-                <TouchableOpacity style={styles.pIconBtn}>
-                  <BookmarkIcon size={15} color={colors.textMuted} />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.pIconBtn}>
-                  <ShareIcon size={15} color={colors.textMuted} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
         </View>
+
+        {/* Список постов вкладки */}
+        {isLoadingTab ? (
+          <View style={styles.loaderBox}>
+            <ActivityIndicator size="small" color={colors.mint} />
+          </View>
+        ) : displayedPosts.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>
+              {activeTab === 'saved'
+                ? 'У вас пока нет сохраненных закладок'
+                : 'Вы пока не опубликовали ни одной трансляции'}
+            </Text>
+          </View>
+        ) : (
+          displayedPosts.map((item) => (
+            <View key={item.id} style={styles.profilePostCard}>
+              <View style={styles.postCardHeader}>
+                <View style={styles.tagBadge}>
+                  <Text style={styles.tagBadgeText}>#{item.topic_tag}</Text>
+                </View>
+                <Text style={styles.postDate}>
+                  {new Date(item.created_at).toLocaleDateString('ru-RU')}
+                </Text>
+              </View>
+
+              <TouchableOpacity onPress={() => openThread(item.id)} activeOpacity={0.85}>
+                <Text style={styles.postCardTitle}>{item.title}</Text>
+                <Text style={styles.postCardBody} numberOfLines={3}>
+                  {item.content}
+                </Text>
+              </TouchableOpacity>
+
+              {item.media_type === 'image' && (
+                <TouchableOpacity
+                  style={styles.previewImageCard}
+                  onPress={() => openThread(item.id)}
+                  activeOpacity={0.85}
+                >
+                  <Image
+                    source={getMediaSource(item.media_key) || require('../../assets/glsl-preview.png')}
+                    style={styles.previewImg}
+                  />
+                  <View style={styles.previewOverlay}>
+                    <CodeBracketsIcon size={12} color={colors.mint} />
+                    <Text style={styles.previewTag}>GLSL SHADER v4.5</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.postCardFooter}>
+                <View style={styles.footerVotes}>
+                  <ThumbsUpIcon size={12} color={colors.mint} />
+                  <Text style={styles.footerVotesCount}>+{item.upvotes}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.footerComments}
+                  onPress={() => openThread(item.id)}
+                >
+                  <ChatBubbleIcon size={12} color={colors.textSecondary} />
+                  <Text style={styles.footerCommentsCount}>{item.comments_count}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+
+        <View style={{ height: 90 }} />
       </ScrollView>
 
-      <BottomNav currentScreen="profile" onNavigate={onNavigate} />
+      {/* Нижняя навигация */}
+      <BottomNav
+        currentScreen="profile"
+        onNavigate={onNavigate}
+        onPressCreatePost={() => setShowCreateModal(true)}
+      />
+
+      {/* Модальные окна */}
+      <EditProfileModal
+        visible={showEditModal}
+        onClose={() => setShowEditModal(false)}
+      />
+
+      <CreatePostModal
+        visible={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onPostCreated={(newId) => openThread(newId)}
+      />
     </View>
   );
 };
@@ -316,28 +327,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onNavigate }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bgApp,
+    backgroundColor: '#0C0D13',
   },
   scrollArea: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 24,
+    paddingBottom: 20,
   },
   profileHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 16,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
   },
   avatarWrap: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    overflow: 'hidden',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     borderWidth: 2,
     borderColor: colors.mint,
+    overflow: 'hidden',
     shadowColor: colors.mint,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
@@ -352,38 +363,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 8,
   },
   editBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#1E222D',
     paddingHorizontal: 12,
     paddingVertical: 7,
-    borderRadius: 18,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 245, 160, 0.12)',
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: colors.mint,
   },
   editBtnText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.mint,
   },
   settingsBtn: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#1E222D',
+    backgroundColor: '#181922',
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   profileBioBox: {
     paddingHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 14,
+    paddingTop: 12,
   },
   nameRow: {
     flexDirection: 'row',
@@ -396,31 +405,50 @@ const styles = StyleSheet.create({
     color: colors.textWhite,
   },
   userHandle: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 11,
-    color: colors.purpleLight,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
+    color: colors.mint,
     marginTop: 2,
+    fontWeight: '600',
   },
   userBio: {
-    fontSize: 12.5,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 18,
     color: colors.textSecondary,
+    marginTop: 6,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     marginTop: 8,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.mint,
+  },
+  statusText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textMuted,
+    letterSpacing: 0.8,
   },
   karmaCard: {
     marginHorizontal: 14,
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: '#141722',
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: '#161824',
     borderWidth: 1,
-    borderColor: 'rgba(0, 245, 160, 0.2)',
-    marginBottom: 16,
+    borderColor: 'rgba(0, 245, 160, 0.25)',
   },
   karmaHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'center',
   },
   karmaTagRow: {
     flexDirection: 'row',
@@ -434,279 +462,216 @@ const styles = StyleSheet.create({
     backgroundColor: colors.mint,
   },
   karmaTagText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 10,
     fontWeight: '700',
     color: colors.textSecondary,
+    letterSpacing: 0.8,
   },
   topAuthorPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(0, 245, 160, 0.12)',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 245, 160, 0.15)',
   },
   topAuthorText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: '700',
     color: colors.mint,
   },
   scoreRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    marginBottom: 12,
+    marginTop: 10,
   },
   scoreNumber: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 24,
+    fontSize: 32,
+    fontWeight: '900',
+    color: colors.textWhite,
+    letterSpacing: -0.5,
+  },
+  scoreUnit: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.mint,
+  },
+  scoreSubtext: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  statBox: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 15,
     fontWeight: '800',
     color: colors.textWhite,
   },
-  scoreUnit: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 12,
-    fontWeight: '700',
+  statNumberMint: {
+    fontSize: 15,
+    fontWeight: '800',
     color: colors.mint,
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  metricItem: {
-    flex: 1,
-    backgroundColor: '#0E1017',
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.borderMuted,
-  },
-  mLabel: {
-    fontSize: 10,
-    color: colors.textDim,
-    marginBottom: 4,
-  },
-  mValue: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: colors.textWhite,
-    marginBottom: 2,
-  },
-  mDelta: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.mint,
-  },
-  mSubMuted: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10,
-    color: colors.textMuted,
-  },
-  mRank: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.mint,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderMuted,
-  },
-  statCol: {
-    alignItems: 'center',
-  },
-  statCount: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.textWhite,
   },
   statLabel: {
-    fontSize: 10.5,
-    color: colors.textDim,
-    marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 9,
+    color: colors.textMuted,
+    marginTop: 3,
+    fontWeight: '600',
   },
-  tabsScroll: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderMuted,
-    marginBottom: 14,
-  },
-  tabsContent: {
-    paddingHorizontal: 14,
-    gap: 18,
+  tabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginTop: 18,
+    marginBottom: 10,
+    gap: 10,
   },
   tabBtn: {
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: '#161822',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   tabBtnActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: colors.mint,
+    backgroundColor: 'rgba(0, 245, 160, 0.15)',
+    borderColor: colors.mint,
   },
-  tabBtnText: {
-    fontSize: 12.5,
-    color: colors.textDim,
-    fontWeight: '500',
+  tabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
   },
-  tabBtnTextActive: {
+  tabTextActive: {
     color: colors.mint,
     fontWeight: '700',
   },
-  postsList: {
-    paddingHorizontal: 14,
-    gap: 14,
+  loaderBox: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyBox: {
+    padding: 30,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
   profilePostCard: {
-    backgroundColor: '#161822',
-    borderRadius: 18,
+    marginHorizontal: 14,
+    marginBottom: 12,
     padding: 14,
+    borderRadius: 16,
+    backgroundColor: colors.bgCard,
     borderWidth: 1,
-    borderColor: colors.borderMuted,
+    borderColor: colors.borderCard,
   },
-  pHeader: {
+  postCardHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
   },
-  pTagPurple: {
-    backgroundColor: 'rgba(168, 85, 247, 0.16)',
+  tagBadge: {
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
+    backgroundColor: colors.purpleBadgeBg,
     borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.35)',
+    borderColor: colors.purpleBadgeBorder,
   },
-  pTagPurpleText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
-    fontWeight: '600',
+  tagBadgeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 9,
+    fontWeight: '700',
     color: colors.purpleLight,
   },
-  pTagMint: {
-    backgroundColor: 'rgba(0, 245, 160, 0.14)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 245, 160, 0.3)',
-  },
-  pTagMintText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
-    fontWeight: '600',
-    color: colors.mint,
-  },
-  pMetaTime: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
+  postDate: {
+    fontSize: 10,
     color: colors.textDim,
-    marginLeft: 6,
   },
-  pMoreBtn: {
-    marginLeft: 'auto',
-    padding: 2,
-  },
-  pTitle: {
-    fontSize: 14.5,
+  postCardTitle: {
+    fontSize: 15,
     fontWeight: '700',
-    lineHeight: 20,
     color: colors.textWhite,
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  pSnippet: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: colors.textMuted,
+  postCardBody: {
+    fontSize: 12.5,
+    lineHeight: 17,
+    color: colors.textSecondary,
     marginBottom: 10,
   },
-  pMediaBox: {
-    height: 140,
+  previewImageCard: {
     borderRadius: 12,
     overflow: 'hidden',
-    position: 'relative',
     marginBottom: 10,
+    position: 'relative',
     borderWidth: 1,
-    borderColor: colors.borderMuted,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  pMediaImg: {
+  previewImg: {
     width: '100%',
-    height: '100%',
+    height: 120,
     resizeMode: 'cover',
   },
-  githubPill: {
+  previewOverlay: {
     position: 'absolute',
-    left: 8,
     bottom: 8,
+    left: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(10, 12, 18, 0.9)',
+    gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
+    backgroundColor: 'rgba(15, 16, 21, 0.85)',
   },
-  githubText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
-    color: colors.textWhite,
-  },
-  pFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  pFooterLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pVotePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#111218',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 14,
-  },
-  pVotePillActive: {
-    backgroundColor: '#0E241B',
-  },
-  pVoteText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10.5,
+  previewTag: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 9,
     fontWeight: '700',
     color: colors.mint,
   },
-  pCommentBtn: {
+  postCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    paddingTop: 4,
+  },
+  footerVotes: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#111218',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 14,
   },
-  pCommentCount: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10.5,
-    color: colors.textMuted,
+  footerVotesCount: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.mint,
   },
-  pFooterRight: {
+  footerComments: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
-  pIconBtn: {
-    padding: 4,
+  footerCommentsCount: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });

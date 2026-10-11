@@ -1,5 +1,5 @@
 // src/screens/FeedScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,10 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import {
@@ -20,26 +24,111 @@ import {
   BookmarkIcon,
   LatencyCurveSvg,
   SparkleIcon,
+  PlusIcon,
 } from '../components/SvgIcons';
 import { Header } from '../components/Header';
 import { BottomNav } from '../components/BottomNav';
-import { ScreenName } from '../types';
+import { ScreenName, PostItem } from '../types';
+import { useDatabase } from '../context/DatabaseContext';
+import {
+  getPosts,
+  togglePostVote,
+  togglePostBookmark,
+  deletePost,
+} from '../database/postsRepository';
+import { getAvatarSource, getMediaSource } from '../utils/assets';
+import { CreatePostModal } from './CreatePostModal';
 
 interface FeedScreenProps {
   onNavigate: (screen: ScreenName) => void;
+  onSelectPost?: (postId: string) => void;
 }
 
-export const FeedScreen: React.FC<FeedScreenProps> = ({ onNavigate }) => {
+export const FeedScreen: React.FC<FeedScreenProps> = ({ onNavigate, onSelectPost }) => {
+  const { currentUser, dataVersion, notifyDataChanged } = useDatabase();
+
   const [activeTab, setActiveTab] = useState<'trending' | 'subs' | 'all' | 'tech'>('trending');
-  const [post1Voted, setPost1Voted] = useState(true);
-  const [post2Voted, setPost2Voted] = useState(false);
-  const [post2Saved, setPost2Saved] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [posts, setPosts] = useState<PostItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  const fetchPosts = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const items = await getPosts(activeTab, searchQuery, currentUser?.id);
+      setPosts(items);
+    } catch (err) {
+      console.error('[FeedScreen] Ошибка загрузки постов:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeTab, searchQuery, currentUser?.id]);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts, dataVersion]);
+
+  const handleVote = async (postId: string, delta: 1 | -1) => {
+    if (!currentUser) return;
+    try {
+      await togglePostVote(postId, currentUser.id, delta);
+      notifyDataChanged();
+    } catch (err) {
+      console.error('[FeedScreen] Ошибка голосования:', err);
+    }
+  };
+
+  const handleBookmark = async (postId: string) => {
+    if (!currentUser) return;
+    try {
+      await togglePostBookmark(postId, currentUser.id);
+      notifyDataChanged();
+    } catch (err) {
+      console.error('[FeedScreen] Ошибка добавления в закладки:', err);
+    }
+  };
+
+  const handlePostMenu = (post: PostItem) => {
+    if (currentUser?.id === post.author_id) {
+      Alert.alert(
+        'Управление публикацией',
+        'Вы являетесь автором этого сообщения.',
+        [
+          { text: 'Отмена', style: 'cancel' },
+          {
+            text: 'Удалить из SQLite',
+            style: 'destructive',
+            onPress: async () => {
+              await deletePost(post.id);
+              notifyDataChanged();
+            },
+          },
+        ]
+      );
+    } else {
+      Alert.alert('NEXUS Node', `Публикация автора ${post.author.name}`);
+    }
+  };
+
+  const openThread = (postId: string) => {
+    if (onSelectPost) {
+      onSelectPost(postId);
+    }
+    onNavigate('thread');
+  };
+
+  const formatUpvotes = (num: number) => {
+    if (num >= 1000) return `+${(num / 1000).toFixed(1)}k`;
+    return `+${num}`;
+  };
 
   return (
     <View style={styles.container}>
       <Header
         onPressProfile={() => onNavigate('profile')}
         onPressLogo={() => onNavigate('feed')}
+        onOpenPost={openThread}
       />
 
       <ScrollView
@@ -47,7 +136,19 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ onNavigate }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Панель фильтров */}
+        {/* Поисковая строка по узлу SQLite */}
+        <View style={styles.searchBarContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Поиск по публикациям, тегам и коду..."
+            placeholderTextColor={colors.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            clearButtonMode="while-editing"
+          />
+        </View>
+
+        {/* Панель фильтров категорий */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -102,224 +203,247 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ onNavigate }) => {
               <View style={styles.pulseDot} />
               <Text style={styles.broadcastTagText}>ТРАНСЛЯЦИЯ ПОДПРОСТРАНСТВА</Text>
             </View>
-            <Text style={styles.nodeText}>УЗЕЛ #882</Text>
+            <Text style={styles.nodeText}>SQLITE // УЗЕЛ #882</Text>
           </View>
           <Text style={styles.broadcastBody}>
-            Развертывание Nexus Kernel 4.19 сегодня ночью. Низколатентная синхронизация векторов по всем узлам.
+            Ядро NEXUS v4.19 синхронизировано. Локальная база данных SQLite активна: все публикации, ветки и карма сохраняются на устройстве.
           </Text>
         </View>
 
-        {/* Карточка поста 1: @kira_valkyrie (кликабельна — ведет в ThreadScreen) */}
-        <TouchableOpacity
-          style={styles.postCard}
-          onPress={() => onNavigate('thread')}
-          activeOpacity={0.92}
-        >
-          <View style={styles.postHeader}>
-            <View style={styles.authorAvatarBox}>
-              <Image source={require('../../assets/avatar-kira.png')} style={styles.authorAvatar} />
-            </View>
+        {/* Индикатор загрузки */}
+        {isLoading && (
+          <View style={styles.loaderBox}>
+            <ActivityIndicator size="small" color={colors.mint} />
+          </View>
+        )}
 
-            <View style={styles.authorInfo}>
-              <View style={styles.authorTitleRow}>
-                <Text style={styles.authorHandle}>@kira_valkyri</Text>
-                <VerifiedBadge size={14} />
-              </View>
-              <View style={styles.authorMetaRow}>
-                <Text style={styles.postTimeText}>12 мин{'\n'}назад</Text>
-                <Text style={styles.metaDot}>•</Text>
-                <Text style={styles.rankPurple}>SysOp{'\n'}Уровень 5</Text>
-              </View>
-            </View>
-
-            <View style={styles.topicBadge}>
-              <Text style={styles.topicBadgeText}>C/NEURAL-NET</Text>
-            </View>
-
-            <TouchableOpacity style={styles.moreBtn}>
-              <MoreDotsIcon size={16} color={colors.textMuted} />
+        {/* Список постов из SQLite */}
+        {!isLoading && posts.length === 0 && (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>В этой категории пока нет публикаций</Text>
+            <TouchableOpacity
+              style={styles.emptyCreateBtn}
+              onPress={() => setShowCreateModal(true)}
+              activeOpacity={0.7}
+            >
+              <PlusIcon size={16} color="#041E13" />
+              <Text style={styles.emptyCreateBtnText}>Создать первую публикацию</Text>
             </TouchableOpacity>
           </View>
+        )}
 
-          <Text style={styles.postBody}>
-            Утекли бенчмарки квантового синтеза GPT-5. Имеем ли мы дело с автономной субъектностью или масштабированным вероятностным выводом? График задержки ниже 👇
-          </Text>
-
-          {/* Виджет телеметрии */}
-          <View style={styles.telemetryBox}>
-            <View style={styles.telemetryTop}>
-              <View style={styles.dotsRow}>
-                <View style={[styles.tDot, { backgroundColor: '#C084FC' }]} />
-                <View style={[styles.tDot, { backgroundColor: '#FBBF24' }]} />
-                <View style={[styles.tDot, { backgroundColor: '#34D399' }]} />
-                <Text style={styles.telemetryTitle}>ЛОГ_ТЕЛЕМЕТРИИ</Text>
-              </View>
-              <Text style={styles.liveTag}>ПРЯМОЙ_ЭФИР</Text>
-            </View>
-            <Text style={styles.codeLineMint}>
-              latency_ms: 1.4 // throughput: 240 t/s // co
-            </Text>
-            <View style={styles.codeLineSub}>
-              <Text style={styles.codeKey}>&gt; delta_compression: </Text>
-              <Text style={styles.codeVal}>0.0031ns [OPTIMAL]</Text>
-            </View>
-          </View>
-
-          {/* Виджет графика затухания задержки */}
-          <View style={styles.chartBox}>
-            <View style={styles.chartTop}>
-              <Text style={styles.chartTitle}>ЗАТУХАНИЕ ЗАДЕРЖКИ</Text>
-              <Text style={styles.chartDelta}>-42% по сравнению с SOTA</Text>
-            </View>
-            <View style={styles.chartSvgWrap}>
-              <LatencyCurveSvg width={295} height={55} />
-            </View>
-          </View>
-
-          {/* Панель действий поста */}
-          <View style={styles.postFooter}>
-            <View style={styles.footerLeft}>
+        {posts.map((post) => (
+          <View key={post.id} style={styles.postCard}>
+            {/* Шапка поста */}
+            <View style={styles.postHeader}>
               <TouchableOpacity
-                style={[styles.votePill, post1Voted && styles.votePillActive]}
-                onPress={() => setPost1Voted(!post1Voted)}
+                style={styles.authorAvatarBox}
+                onPress={() => onNavigate('profile')}
                 activeOpacity={0.7}
               >
-                <ThumbsUpIcon size={14} color={post1Voted ? colors.mint : colors.textSecondary} filled={post1Voted} />
-                <Text style={[styles.voteCountText, post1Voted && styles.voteCountActive]}>
-                  +2.4k
-                </Text>
-                <View style={styles.voteDivider} />
-                <ThumbsDownIcon size={14} color={colors.textMuted} />
+                <Image
+                  source={getAvatarSource(post.author.avatar_key)}
+                  style={styles.authorAvatar}
+                />
               </TouchableOpacity>
+
+              <View style={styles.authorInfo}>
+                <View style={styles.authorTitleRow}>
+                  <Text style={styles.authorHandle}>{post.author.name}</Text>
+                  {post.author.verified && <VerifiedBadge size={14} />}
+                </View>
+
+                <View style={styles.authorMetaRow}>
+                  <Text style={styles.postTimeText}>{post.author.handle}</Text>
+                  <Text style={styles.metaDot}>•</Text>
+                  <Text style={styles.rankMint}>{post.author.network_rank || '#УЗЕЛ'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.topicBadge}>
+                <Text style={styles.topicBadgeText}>#{post.topic_tag}</Text>
+              </View>
 
               <TouchableOpacity
-                style={styles.actionPill}
-                onPress={() => onNavigate('thread')}
+                style={styles.moreBtn}
+                onPress={() => handlePostMenu(post)}
                 activeOpacity={0.7}
               >
-                <ChatBubbleIcon size={13} color={colors.textMuted} />
-                <Text style={styles.actionPillText}>342</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.actionPill} activeOpacity={0.7}>
-                <RepostIcon size={13} color={colors.textMuted} />
-                <Text style={styles.actionPillText}>89</Text>
+                <MoreDotsIcon size={16} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.footerRight}>
-              <TouchableOpacity style={styles.plainBtn}>
-                <ShareIcon size={15} color={colors.textMuted} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.plainBtn}>
-                <BookmarkIcon size={15} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Карточка поста 2: @zeno_flux */}
-        <View style={styles.postCard}>
-          <View style={styles.postHeader}>
-            <View style={[styles.authorAvatarBox, { borderColor: colors.mint }]}>
-              <Image source={require('../../assets/avatar-zeno.png')} style={styles.authorAvatar} />
-            </View>
-
-            <View style={styles.authorInfo}>
-              <View style={styles.authorTitleRow}>
-                <Text style={styles.authorHandle}>@zeno_flux</Text>
-              </View>
-              <View style={styles.authorMetaRow}>
-                <Text style={styles.postTimeText}>45 мин{'\n'}назад</Text>
-                <Text style={styles.metaDot}>•</Text>
-                <Text style={styles.rankMint}>Ключевой{'\n'}участник</Text>
-              </View>
-            </View>
-
-            <View style={styles.topicBadge}>
-              <Text style={styles.topicBadgeText}>C/CYBERPUNK-DEV</Text>
-            </View>
-
-            <TouchableOpacity style={styles.moreBtn}>
-              <MoreDotsIcon size={16} color={colors.textMuted} />
+            {/* Заголовок и кликабельный контент (переход в тред) */}
+            <TouchableOpacity onPress={() => openThread(post.id)} activeOpacity={0.85}>
+              <Text style={styles.postTitle}>{post.title}</Text>
+              <Text style={styles.postContent}>{post.content}</Text>
             </TouchableOpacity>
-          </View>
 
-          <Text style={styles.postBody}>
-            Чистый темный UI со стеклянными карточками и неоново-мятными акцентами — пик эстетики для обсуждений разработчиков. Как вам наш новый интерфейс форума?
-          </Text>
-
-          {/* Медиа-превью */}
-          <View style={styles.mediaBox}>
-            <Image source={require('../../assets/nexus-preview.png')} style={styles.mediaImg} />
-            <View style={styles.mediaOverlay}>
-              <View style={styles.specPill}>
-                <Text style={styles.specPillText}>Спецификация Nexus Engine v2.4</Text>
-              </View>
-              <View style={styles.fpsPill}>
-                <Text style={styles.fpsPillText}>120 FPS</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Панель действий поста 2 */}
-          <View style={styles.postFooter}>
-            <View style={styles.footerLeft}>
+            {/* Вложение: График затухания телеметрии */}
+            {post.media_type === 'telemetry_chart' && (
               <TouchableOpacity
-                style={styles.votePill}
-                onPress={() => setPost2Voted(!post2Voted)}
-                activeOpacity={0.7}
+                style={styles.chartWidget}
+                onPress={() => openThread(post.id)}
+                activeOpacity={0.85}
               >
-                <ThumbsUpIcon size={14} color={post2Voted ? colors.mint : colors.textSecondary} filled={post2Voted} />
-                <Text style={[styles.voteCountText, post2Voted && styles.voteCountActive]}>
-                  {post2Voted ? '+1.9k' : '+1.8k'}
+                <View style={styles.chartHeader}>
+                  <View style={styles.chartTitleBox}>
+                    <Text style={styles.chartTitle}>ЗАТУХАНИЕ ЗАДЕРЖКИ</Text>
+                    <Text style={styles.chartSubtitle}>-42% ПО СРАВНЕНИЮ С SOTA</Text>
+                  </View>
+                  <View style={styles.sotaBadge}>
+                    <Text style={styles.sotaBadgeText}>SOTA</Text>
+                  </View>
+                </View>
+                <View style={styles.chartCanvas}>
+                  <LatencyCurveSvg width={280} height={46} />
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* Вложение: Медиа-изображение */}
+            {post.media_type === 'image' && (
+              <TouchableOpacity
+                style={styles.mediaCard}
+                onPress={() => openThread(post.id)}
+                activeOpacity={0.85}
+              >
+                <Image
+                  source={getMediaSource(post.media_key) || require('../../assets/nexus-preview.png')}
+                  style={styles.mediaImg}
+                />
+                <View style={styles.mediaOverlayBottom}>
+                  {post.spec_badge && (
+                    <View style={styles.specPill}>
+                      <Text style={styles.specText}>{post.spec_badge}</Text>
+                    </View>
+                  )}
+                  {post.fps_badge && (
+                    <View style={styles.fpsPill}>
+                      <Text style={styles.fpsText}>{post.fps_badge}</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* Вложение: Превью кода (если есть сниппет) */}
+            {post.code_snippet && (
+              <TouchableOpacity
+                style={styles.codeSnippetCard}
+                onPress={() => openThread(post.id)}
+                activeOpacity={0.85}
+              >
+                <View style={styles.codeSnippetHeader}>
+                  <Text style={styles.codeSnippetFilename}>
+                    {post.code_filename || 'SNIPPET.PY'}
+                  </Text>
+                  <Text style={styles.codeSnippetTag}>PYTHON 3.12</Text>
+                </View>
+                <Text style={styles.codeSnippetText} numberOfLines={3}>
+                  {post.code_snippet}
                 </Text>
-                <View style={styles.voteDivider} />
-                <ThumbsDownIcon size={14} color={colors.textMuted} />
               </TouchableOpacity>
+            )}
 
-              <TouchableOpacity style={styles.actionPill}>
-                <ChatBubbleIcon size={13} color={colors.textMuted} />
-                <Text style={styles.actionPillText}>128</Text>
-              </TouchableOpacity>
+            {/* Панель реакций и действий */}
+            <View style={styles.actionsBar}>
+              <View style={styles.leftActions}>
+                {/* Голосование: Апвоут */}
+                <TouchableOpacity
+                  style={[styles.actionPill, post.isUpvoted && styles.actionPillMint]}
+                  onPress={() => handleVote(post.id, 1)}
+                  activeOpacity={0.7}
+                >
+                  <ThumbsUpIcon
+                    size={13}
+                    color={post.isUpvoted ? colors.mint : colors.textSecondary}
+                  />
+                  <Text style={[styles.actionCount, post.isUpvoted && styles.actionCountMint]}>
+                    {formatUpvotes(post.upvotes)}
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.actionPill}>
-                <RepostIcon size={13} color={colors.textMuted} />
-                <Text style={styles.actionPillText}>41</Text>
-              </TouchableOpacity>
-            </View>
+                {/* Голосование: Дизвоут */}
+                <TouchableOpacity
+                  style={[styles.actionPill, post.isDownvoted && styles.actionPillRed]}
+                  onPress={() => handleVote(post.id, -1)}
+                  activeOpacity={0.7}
+                >
+                  <ThumbsDownIcon
+                    size={13}
+                    color={post.isDownvoted ? '#EF4444' : colors.textSecondary}
+                  />
+                </TouchableOpacity>
 
-            <View style={styles.footerRight}>
-              <TouchableOpacity style={styles.plainBtn}>
-                <ShareIcon size={15} color={colors.textMuted} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookmarkFab, post2Saved && styles.bookmarkFabActive]}
-                onPress={() => setPost2Saved(!post2Saved)}
-                activeOpacity={0.7}
-              >
-                <BookmarkIcon size={15} color={post2Saved ? '#D8B4FE' : colors.textMuted} filled={post2Saved} />
-              </TouchableOpacity>
+                {/* Комментарии */}
+                <TouchableOpacity
+                  style={styles.actionPill}
+                  onPress={() => openThread(post.id)}
+                  activeOpacity={0.7}
+                >
+                  <ChatBubbleIcon size={13} color={colors.textSecondary} />
+                  <Text style={styles.actionCount}>{post.comments_count}</Text>
+                </TouchableOpacity>
+
+                {/* Репост */}
+                <TouchableOpacity style={styles.actionPill} activeOpacity={0.7}>
+                  <RepostIcon size={13} color={colors.textSecondary} />
+                  <Text style={styles.actionCount}>{post.reposts_count}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.rightActions}>
+                <TouchableOpacity style={styles.iconActionBtn} activeOpacity={0.7}>
+                  <ShareIcon size={14} color={colors.textSecondary} />
+                </TouchableOpacity>
+
+                {/* Закладка */}
+                <TouchableOpacity
+                  style={[styles.bookmarkBtn, post.isBookmarked && styles.bookmarkBtnSaved]}
+                  onPress={() => handleBookmark(post.id)}
+                  activeOpacity={0.7}
+                >
+                  <BookmarkIcon
+                    size={14}
+                    color={post.isBookmarked ? colors.purpleLight : colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        ))}
 
-        {/* Баннер «Награда подпространства» */}
+        {/* Карточка задания подпространства (Bounty) */}
         <View style={styles.bountyCard}>
           <View style={styles.bountyIconBox}>
-            <SparkleIcon size={18} color="#E9D5FF" />
+            <SparkleIcon size={18} color={colors.mint} />
           </View>
-          <View style={styles.bountyTextBox}>
-            <Text style={styles.bountyTitle} numberOfLines={1}>Награда подпространст...</Text>
-            <Text style={styles.bountyDesc} numberOfLines={1}>Устранить состояние гонки памят...</Text>
+          <View style={styles.bountyInfo}>
+            <Text style={styles.bountyTitle}>Устранение состояния гонки памяти</Text>
+            <Text style={styles.bountySub}>Награда: 2,500 NEX // Высокая сложность</Text>
           </View>
-          <TouchableOpacity style={styles.bountyBtn} activeOpacity={0.8}>
-            <Text style={styles.bountyBtnText}>Обзор</Text>
+          <TouchableOpacity style={styles.bountyActionBtn} activeOpacity={0.8}>
+            <Text style={styles.bountyActionText}>Обзор</Text>
           </TouchableOpacity>
         </View>
+
+        <View style={{ height: 90 }} />
       </ScrollView>
 
-      <BottomNav currentScreen="feed" onNavigate={onNavigate} />
+      {/* Нижняя навигация */}
+      <BottomNav
+        currentScreen="feed"
+        onNavigate={onNavigate}
+        onPressCreatePost={() => setShowCreateModal(true)}
+      />
+
+      {/* Модальное окно создания поста */}
+      <CreatePostModal
+        visible={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onPostCreated={(newId) => openThread(newId)}
+      />
     </View>
   );
 };
@@ -327,7 +451,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ onNavigate }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bgApp,
+    backgroundColor: '#0C0D13',
   },
   scrollArea: {
     flex: 1,
@@ -335,47 +459,56 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 20,
   },
+  searchBarContainer: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  searchInput: {
+    backgroundColor: '#161822',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    fontSize: 13,
+    color: colors.textWhite,
+  },
   filterScroll: {
-    paddingVertical: 12,
+    marginTop: 6,
+    marginBottom: 10,
   },
   filterContent: {
     paddingHorizontal: 14,
     gap: 8,
   },
   filterPill: {
-    paddingHorizontal: 13,
+    paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#1A1C25',
+    backgroundColor: '#181922',
     borderWidth: 1,
-    borderColor: colors.borderCard,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   filterPillActive: {
     backgroundColor: colors.mint,
     borderColor: colors.mint,
-    shadowColor: colors.mint,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
   },
   filterText: {
-    fontFamily: 'Inter, sans-serif, -apple-system',
     fontSize: 12,
-    fontWeight: '500',
-    color: colors.textSecondary,
+    fontWeight: '600',
+    color: '#9CA3AF',
   },
   filterTextActive: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 11.5,
-    fontWeight: '700',
     color: colors.mintTextDark,
+    fontWeight: '700',
   },
   broadcastBanner: {
     marginHorizontal: 14,
     marginBottom: 14,
-    padding: 13,
+    padding: 12,
     borderRadius: 16,
-    backgroundColor: '#171923',
+    backgroundColor: '#161426',
     borderWidth: 1,
     borderColor: 'rgba(168, 85, 247, 0.25)',
   },
@@ -395,27 +528,55 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 4,
     backgroundColor: colors.mint,
-    shadowColor: colors.mint,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 5,
   },
   broadcastTagText: {
-    fontFamily: 'JetBrains Mono, monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.5,
     color: colors.textSecondary,
   },
   nodeText: {
-    fontFamily: 'JetBrains Mono, monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 10,
     color: colors.textDim,
   },
   broadcastBody: {
-    fontSize: 12.5,
-    lineHeight: 17,
+    fontSize: 12,
+    lineHeight: 16,
     color: colors.textSecondary,
+  },
+  loaderBox: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyCard: {
+    marginHorizontal: 14,
+    padding: 30,
+    borderRadius: 20,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.borderCard,
+    alignItems: 'center',
+    gap: 14,
+  },
+  emptyTitle: {
+    color: colors.textMuted,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  emptyCreateBtn: {
+    backgroundColor: colors.mint,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  emptyCreateBtnText: {
+    color: '#041E13',
+    fontWeight: '700',
+    fontSize: 12,
   },
   postCard: {
     marginHorizontal: 14,
@@ -465,26 +626,17 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   postTimeText: {
-    fontFamily: 'JetBrains Mono, monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 9.5,
-    lineHeight: 11,
     color: colors.textMuted,
   },
   metaDot: {
     fontSize: 9,
     color: colors.textDim,
   },
-  rankPurple: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
-    lineHeight: 11,
-    fontWeight: '600',
-    color: colors.purpleLight,
-  },
   rankMint: {
-    fontFamily: 'JetBrains Mono, monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 9.5,
-    lineHeight: 11,
     fontWeight: '600',
     color: colors.mint,
   },
@@ -497,275 +649,250 @@ const styles = StyleSheet.create({
     borderColor: colors.purpleBadgeBorder,
   },
   topicBadgeText: {
-    fontFamily: 'JetBrains Mono, monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 9,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.purpleLight,
   },
   moreBtn: {
-    padding: 3,
+    padding: 4,
   },
-  postBody: {
+  postTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textWhite,
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+  postContent: {
     fontSize: 13,
     lineHeight: 18,
     color: colors.textSecondary,
     marginBottom: 12,
   },
-  telemetryBox: {
-    backgroundColor: colors.bgTerminal,
+  chartWidget: {
+    borderRadius: 14,
+    backgroundColor: '#090A0E',
     borderWidth: 1,
-    borderColor: colors.borderMuted,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 9,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 12,
+    marginBottom: 12,
+    overflow: 'hidden',
   },
-  telemetryTop: {
+  chartHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
-  dotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  chartTitleBox: {},
+  chartTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    color: colors.textMuted,
   },
-  tDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  chartSubtitle: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.mint,
+    marginTop: 2,
   },
-  telemetryTitle: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
-    color: colors.textDim,
-    marginLeft: 4,
+  sotaBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0, 245, 160, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 245, 160, 0.4)',
   },
-  liveTag: {
-    fontFamily: 'JetBrains Mono, monospace',
+  sotaBadgeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 9,
     fontWeight: '700',
     color: colors.mint,
   },
-  codeLineMint: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10.5,
-    color: colors.mint,
-    marginBottom: 3,
-  },
-  codeLineSub: {
-    flexDirection: 'row',
-  },
-  codeKey: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10.5,
-    fontWeight: '600',
-    color: '#C084FC',
-  },
-  codeVal: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10.5,
-    color: colors.textMuted,
-  },
-  chartBox: {
-    backgroundColor: '#12141C',
-    borderWidth: 1,
-    borderColor: colors.borderMuted,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
-  },
-  chartTop: {
-    flexDirection: 'row',
+  chartCanvas: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    justifyContent: 'center',
+    height: 50,
   },
-  chartTitle: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
-    color: colors.textDim,
-  },
-  chartDelta: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.mint,
-  },
-  chartSvgWrap: {
-    marginTop: -8,
-  },
-  mediaBox: {
-    height: 165,
-    borderRadius: 12,
+  mediaCard: {
+    borderRadius: 14,
     overflow: 'hidden',
-    position: 'relative',
     marginBottom: 12,
+    backgroundColor: '#090A0E',
     borderWidth: 1,
-    borderColor: colors.borderCard,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    position: 'relative',
   },
   mediaImg: {
     width: '100%',
-    height: '100%',
+    height: 140,
     resizeMode: 'cover',
   },
-  mediaOverlay: {
+  mediaOverlayBottom: {
     position: 'absolute',
+    bottom: 8,
     left: 8,
     right: 8,
-    bottom: 8,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
   },
   specPill: {
-    backgroundColor: 'rgba(18, 20, 28, 0.88)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+    backgroundColor: 'rgba(15, 16, 21, 0.85)',
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
-  specPillText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
-    color: colors.textSecondary,
+  specText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 9,
+    color: '#E2E8F0',
+    fontWeight: '600',
   },
   fpsPill: {
-    backgroundColor: 'rgba(4, 38, 26, 0.88)',
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+    backgroundColor: 'rgba(0, 245, 160, 0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(0, 245, 160, 0.35)',
+    borderColor: colors.mint,
   },
-  fpsPillText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
+  fpsText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 9,
+    color: colors.mint,
+    fontWeight: '700',
+  },
+  codeSnippetCard: {
+    backgroundColor: '#090A0F',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    padding: 10,
+    marginBottom: 12,
+  },
+  codeSnippetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  codeSnippetFilename: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 10,
     fontWeight: '700',
     color: colors.mint,
   },
-  postFooter: {
+  codeSnippetTag: {
+    fontSize: 9,
+    color: colors.textMuted,
+  },
+  codeSnippetText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 11,
+    color: '#CBD5E1',
+    lineHeight: 15,
+  },
+  actionsBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingTop: 6,
   },
-  footerLeft: {
+  leftActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-  },
-  votePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.actionPillBg,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.borderMuted,
-  },
-  votePillActive: {
-    borderColor: 'rgba(0, 245, 160, 0.3)',
-  },
-  voteCountText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  voteCountActive: {
-    color: colors.mint,
-  },
-  voteDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   actionPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: colors.actionPillBg,
     paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 16,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: '#1F2230',
+  },
+  actionPillMint: {
+    backgroundColor: 'rgba(0, 245, 160, 0.15)',
     borderWidth: 1,
-    borderColor: colors.borderMuted,
+    borderColor: colors.mint,
   },
-  actionPillText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10.5,
-    color: colors.textMuted,
+  actionPillRed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
   },
-  footerRight: {
+  actionCount: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  actionCountMint: {
+    color: colors.mint,
+    fontWeight: '700',
+  },
+  rightActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  plainBtn: {
-    padding: 4,
+  iconActionBtn: {
+    padding: 6,
   },
-  bookmarkFab: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#1C1628',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(192, 132, 252, 0.25)',
+  bookmarkBtn: {
+    padding: 6,
+    borderRadius: 8,
   },
-  bookmarkFabActive: {
-    shadowColor: colors.purple,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
+  bookmarkBtnSaved: {
+    backgroundColor: 'rgba(168, 85, 247, 0.2)',
   },
   bountyCard: {
     marginHorizontal: 14,
-    marginBottom: 10,
-    padding: 12,
+    padding: 14,
     borderRadius: 16,
-    backgroundColor: '#14151E',
+    backgroundColor: '#141724',
     borderWidth: 1,
-    borderColor: colors.borderMuted,
+    borderColor: 'rgba(0, 245, 160, 0.2)',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   bountyIconBox: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#351962',
+    backgroundColor: 'rgba(0, 245, 160, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bountyTextBox: {
+  bountyInfo: {
     flex: 1,
   },
   bountyTitle: {
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '700',
     color: colors.textWhite,
   },
-  bountyDesc: {
+  bountySub: {
     fontSize: 11,
-    color: colors.textDim,
+    color: colors.mint,
+    marginTop: 2,
   },
-  bountyBtn: {
-    paddingHorizontal: 13,
+  bountyActionBtn: {
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#222430',
-    borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
-  bountyBtnText: {
-    fontSize: 11.5,
+  bountyActionText: {
+    fontSize: 12,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.textWhite,
   },
 });

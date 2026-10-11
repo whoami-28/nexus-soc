@@ -1,5 +1,5 @@
 // src/screens/ThreadScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,9 @@ import {
   Image,
   TextInput,
   StyleSheet,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { colors } from '../theme/colors';
 import {
@@ -26,27 +29,144 @@ import {
   ChartBarIcon,
   SmileIcon,
 } from '../components/SvgIcons';
-import { ScreenName } from '../types';
+import { ScreenName, PostItem, CommentItemData } from '../types';
+import { useDatabase } from '../context/DatabaseContext';
+import {
+  getPostById,
+  togglePostVote,
+  togglePostBookmark,
+} from '../database/postsRepository';
+import {
+  getCommentsByPostId,
+  createComment,
+  toggleCommentVote,
+} from '../database/commentsRepository';
+import { getAvatarSource } from '../utils/assets';
 
 interface ThreadScreenProps {
+  postId?: string;
   onNavigate: (screen: ScreenName) => void;
 }
 
-export const ThreadScreen: React.FC<ThreadScreenProps> = ({ onNavigate }) => {
-  const [commentFilter, setCommentFilter] = useState<'best' | 'new'>('best');
-  const [copied, setCopied] = useState(false);
-  const [replyText, setReplyText] = useState('');
-  const [postUpvoted, setPostUpvoted] = useState(true);
-  const [bookmarked, setBookmarked] = useState(false);
+export const ThreadScreen: React.FC<ThreadScreenProps> = ({
+  postId = 'post_kira_telemetry',
+  onNavigate,
+}) => {
+  const { currentUser, dataVersion, notifyDataChanged } = useDatabase();
 
-  const handleCopy = () => {
+  const [post, setPost] = useState<PostItem | null>(null);
+  const [comments, setComments] = useState<CommentItemData[]>([]);
+  const [commentFilter, setCommentFilter] = useState<'best' | 'new'>('best');
+  const [replyText, setReplyText] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+
+  const loadThreadData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const postData = await getPostById(postId, currentUser?.id);
+      setPost(postData);
+      const commentItems = await getCommentsByPostId(postId, commentFilter, currentUser?.id);
+      setComments(commentItems);
+    } catch (err) {
+      console.error('[ThreadScreen] Ошибка загрузки треда:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [postId, commentFilter, currentUser?.id]);
+
+  useEffect(() => {
+    loadThreadData();
+  }, [loadThreadData, dataVersion]);
+
+  const handleCopyCode = () => {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handlePostVote = async (delta: 1 | -1) => {
+    if (!currentUser || !post) return;
+    try {
+      await togglePostVote(post.id, currentUser.id, delta);
+      notifyDataChanged();
+    } catch (err) {
+      console.error('[ThreadScreen] Ошибка голосования:', err);
+    }
+  };
+
+  const handlePostBookmark = async () => {
+    if (!currentUser || !post) return;
+    try {
+      await togglePostBookmark(post.id, currentUser.id);
+      notifyDataChanged();
+    } catch (err) {
+      console.error('[ThreadScreen] Ошибка закладки:', err);
+    }
+  };
+
+  const handleSendComment = async () => {
+    if (!replyText.trim() || !currentUser || !post) return;
+    try {
+      setIsSending(true);
+      await createComment(currentUser.id, {
+        post_id: post.id,
+        parent_id: replyingToCommentId,
+        content: replyText.trim(),
+        depth: replyingToCommentId ? 1 : 0,
+      });
+      setReplyText('');
+      setReplyingToCommentId(null);
+      notifyDataChanged();
+    } catch (err) {
+      console.error('[ThreadScreen] Ошибка отправки комментария:', err);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleCommentVote = async (commentId: string) => {
+    if (!currentUser) return;
+    try {
+      await toggleCommentVote(commentId, currentUser.id);
+      notifyDataChanged();
+    } catch (err) {
+      console.error('[ThreadScreen] Ошибка голосования за комментарий:', err);
+    }
+  };
+
+  const formatUpvotes = (num: number) => {
+    if (num >= 1000) return `+${(num / 1000).toFixed(1)}k`;
+    return `+${num}`;
+  };
+
+  if (isLoading && !post) {
+    return (
+      <View style={[styles.container, styles.centerBox]}>
+        <ActivityIndicator size="large" color={colors.mint} />
+        <Text style={styles.loadingText}>Загрузка ветки обсуждения...</Text>
+      </View>
+    );
+  }
+
+  if (!post) {
+    return (
+      <View style={[styles.container, styles.centerBox]}>
+        <Text style={styles.errorText}>Публикация не найдена в SQLite</Text>
+        <TouchableOpacity style={styles.backHomeBtn} onPress={() => onNavigate('feed')}>
+          <Text style={styles.backHomeBtnText}>Вернуться в ленту</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.container}>
-      {/* Шапка ветки обсуждения */}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      {/* Шапка ветки */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -73,7 +193,10 @@ export const ThreadScreen: React.FC<ThreadScreenProps> = ({ onNavigate }) => {
             onPress={() => onNavigate('profile')}
             activeOpacity={0.7}
           >
-            <Image source={require('../../assets/avatar-user.png')} style={styles.avatarImg} />
+            <Image
+              source={getAvatarSource(currentUser?.avatar_key)}
+              style={styles.avatarImg}
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -86,311 +209,321 @@ export const ThreadScreen: React.FC<ThreadScreenProps> = ({ onNavigate }) => {
         {/* Автор основного поста */}
         <View style={styles.authorRow}>
           <View style={styles.authorAvatarBox}>
-            <Image source={require('../../assets/avatar-kira-thread.png')} style={styles.authorAvatar} />
+            <Image
+              source={getAvatarSource(post.author.avatar_key)}
+              style={styles.authorAvatar}
+            />
           </View>
           <View style={styles.authorInfo}>
             <View style={styles.authorNameRow}>
-              <Text style={styles.authorName}>Kira Vance</Text>
-              <VerifiedBadge size={14} />
+              <Text style={styles.authorName}>{post.author.name}</Text>
+              {post.author.verified && <VerifiedBadge size={14} />}
             </View>
-            <Text style={styles.authorHandle}>@kira_valkyrie • 2ч назад</Text>
+            <Text style={styles.authorHandle}>{post.author.handle}</Text>
           </View>
         </View>
 
-        {/* Заголовок поста */}
-        <Text style={styles.postTitle}>
-          Автономная субъектность против масштабированного вероятностного вывода
-        </Text>
+        {/* Заголовок и текст поста */}
+        <Text style={styles.postTitle}>{post.title}</Text>
+        <Text style={styles.postBody}>{post.content}</Text>
 
-        {/* Текст поста */}
-        <Text style={styles.postBody}>
-          После изучения квантовых сред выполнения LLM задержка снизилась с 45мс до 1.4мс, что фундаментально меняет мультиагентную оркестрацию. Ниже приведена архитектура:
-        </Text>
+        {/* Терминальный блок кода (если есть сниппет) */}
+        {post.code_snippet && (
+          <View style={styles.codeBlock}>
+            <View style={styles.codeHeader}>
+              <View style={styles.dotsRow}>
+                <View style={[styles.cDot, { backgroundColor: '#EF4444' }]} />
+                <View style={[styles.cDot, { backgroundColor: '#F59E0B' }]} />
+                <View style={[styles.cDot, { backgroundColor: '#10B981' }]} />
+                <Text style={styles.codeFilename}>
+                  {post.code_filename || 'MESH_DISPATCHER.PY'}
+                </Text>
+              </View>
 
-        {/* Терминальный блок с кодом Python */}
-        <View style={styles.codeBlock}>
-          <View style={styles.codeHeader}>
-            <View style={styles.dotsRow}>
-              <View style={[styles.cDot, { backgroundColor: '#C084FC' }]} />
-              <View style={[styles.cDot, { backgroundColor: '#FBBF24' }]} />
-              <View style={[styles.cDot, { backgroundColor: '#34D399' }]} />
-              <Text style={styles.codeFilename}>MESH_DISPATCHER.PY</Text>
+              <TouchableOpacity
+                style={styles.copyBtn}
+                onPress={handleCopyCode}
+                activeOpacity={0.7}
+              >
+                <CopyIcon size={14} color={copied ? colors.mint : colors.textMuted} />
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.copyBtn} onPress={handleCopy} activeOpacity={0.7}>
-              <CopyIcon size={13} color={copied ? colors.mint : colors.textMuted} />
-            </TouchableOpacity>
+            <View style={styles.codeBody}>
+              <Text style={styles.codeText}>{post.code_snippet}</Text>
+            </View>
           </View>
-
-          <View style={styles.codeBody}>
-            <Text style={styles.codeLine}>
-              <Text style={styles.cKeyword}>async def </Text>
-              <Text style={styles.cFunc}>dispatch_neural_mesh</Text>
-              <Text style={styles.cPlain}>(cluster: NodeGrid):</Text>
-            </Text>
-
-            <Text style={styles.codeLine}>
-              <Text style={styles.cIndent}>  runtime_nodes = </Text>
-              <Text style={styles.cKeyword}>await </Text>
-              <Text style={styles.cPlain}>cluster.resolve_active_q</Text>
-            </Text>
-
-            <Text style={styles.codeLine}>
-              <Text style={styles.cIndent}>  sync_frame = runtime_nodes.build_vector_stream(</Text>
-            </Text>
-
-            <Text style={styles.codeLine}>
-              <Text style={styles.cIndent}>    mode=</Text>
-              <Text style={styles.cString}>"speculative_v4"</Text>
-              <Text style={styles.cPlain}>,</Text>
-            </Text>
-
-            <Text style={styles.codeLine}>
-              <Text style={styles.cIndent}>    latency_budget_ms=</Text>
-              <Text style={styles.cNumber}>1.4</Text>
-            </Text>
-
-            <Text style={styles.codeLine}>
-              <Text style={styles.cIndent}>  )</Text>
-            </Text>
-
-            <Text style={styles.codeLine}>
-              <Text style={styles.cIndent}>  </Text>
-              <Text style={styles.cKeyword}>return await </Text>
-              <Text style={styles.cPlain}>sync_frame.commit_state_pulse()</Text>
-            </Text>
-          </View>
-        </View>
+        )}
 
         {/* Панель реакций на пост */}
         <View style={styles.actionsRow}>
           <TouchableOpacity
-            style={[styles.votePill, postUpvoted && styles.votePillActive]}
-            onPress={() => setPostUpvoted(!postUpvoted)}
+            style={[styles.votePill, post.isUpvoted && styles.votePillActive]}
+            onPress={() => handlePostVote(1)}
             activeOpacity={0.7}
           >
-            <ArrowUpVoteIcon size={14} color={postUpvoted ? colors.mintTextDark : colors.textMuted} />
-            <Text style={[styles.voteCountText, postUpvoted && styles.voteCountActive]}>
-              {postUpvoted ? '4.2k' : '4.1k'}
-            </Text>
-            <ArrowDownVoteIcon size={14} color={postUpvoted ? colors.mintTextDark : colors.textMuted} />
+            <ArrowUpVoteIcon size={13} color={colors.mintTextDark} />
+            <Text style={styles.voteCountText}>{formatUpvotes(post.upvotes)}</Text>
+            <ArrowDownVoteIcon size={13} color={colors.mintTextDark} />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
             <RepostIcon size={14} color={colors.textSecondary} />
-            <Text style={styles.actionBtnText}>Репост</Text>
+            <Text style={styles.actionBtnText}>{post.reposts_count}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.iconActionBtn}
-            onPress={() => setBookmarked(!bookmarked)}
+            style={[styles.actionBtn, post.isBookmarked && styles.actionBtnSaved]}
+            onPress={handlePostBookmark}
             activeOpacity={0.7}
           >
-            <BookmarkIcon size={16} color={bookmarked ? colors.purpleLight : colors.textSecondary} filled={bookmarked} />
+            <BookmarkIcon
+              size={14}
+              color={post.isBookmarked ? colors.purpleLight : colors.textSecondary}
+            />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.iconActionBtn} activeOpacity={0.7}>
-            <ShareIcon size={16} color={colors.textSecondary} />
+          <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+            <ShareIcon size={14} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
-        {/* Разделитель и шапка комментариев */}
-        <View style={styles.commentsHeaderRow}>
-          <View style={styles.commentsTitleGroup}>
-            <Text style={styles.commentsTitle}>Ветка комментариев</Text>
-            <View style={styles.commentsBadge}>
-              <Text style={styles.commentsBadgeText}>582</Text>
+        {/* Разделитель */}
+        <View style={styles.divider} />
+
+        {/* Шапка секции комментариев */}
+        <View style={styles.commentsHeader}>
+          <View style={styles.commentsCountRow}>
+            <Text style={styles.commentsTitle}>Комментарии</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>{comments.length}</Text>
             </View>
           </View>
 
-          <View style={styles.filterPillsGroup}>
+          <View style={styles.filterRow}>
             <TouchableOpacity
-              style={[styles.sortPill, commentFilter === 'best' && styles.sortPillActive]}
+              style={[styles.filterBtn, commentFilter === 'best' && styles.filterBtnActive]}
               onPress={() => setCommentFilter('best')}
               activeOpacity={0.7}
             >
-              <Text style={[styles.sortPillText, commentFilter === 'best' && styles.sortPillTextActive]}>
+              <Text
+                style={[
+                  styles.filterBtnText,
+                  commentFilter === 'best' && styles.filterBtnTextActive,
+                ]}
+              >
                 Лучшие
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.sortPill, commentFilter === 'new' && styles.sortPillActive]}
+              style={[styles.filterBtn, commentFilter === 'new' && styles.filterBtnActive]}
               onPress={() => setCommentFilter('new')}
               activeOpacity={0.7}
             >
-              <Text style={[styles.sortPillText, commentFilter === 'new' && styles.sortPillTextActive]}>
+              <Text
+                style={[
+                  styles.filterBtnText,
+                  commentFilter === 'new' && styles.filterBtnTextActive,
+                ]}
+              >
                 Новые
               </Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Дерево комментариев */}
-        <View style={styles.commentsList}>
-
-          {/* Комментарий 1: Marx Cyber */}
-          <View style={styles.commentItem}>
-            <View style={styles.commentCard}>
-              <View style={styles.commentHeader}>
-                <Image source={require('../../assets/avatar-marx.png')} style={styles.cAvatar} />
-                <View style={styles.cAuthorInfo}>
-                  <Text style={styles.cAuthorName}>Marx Cyber</Text>
-                  <Text style={styles.cAuthorMeta}>@marx_cyber • 1ч назад</Text>
-                </View>
-                <TouchableOpacity style={styles.cMoreBtn}>
-                  <MoreDotsIcon size={14} color={colors.textMuted} horizontal />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.commentText}>
-                Больше всего меня удивляет объем используемой памяти. Запуск на периферийных устройствах раньше был невозможен.
-              </Text>
-
-              <View style={styles.commentFooter}>
-                <TouchableOpacity style={styles.cVoteBtn} activeOpacity={0.7}>
-                  <ArrowUpVoteIcon size={12} color={colors.mint} />
-                  <Text style={styles.cVoteText}>+428</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.cReplyBtn} activeOpacity={0.7}>
-                  <Text style={styles.cReplyText}>↩ Ответить</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+        {/* Дерево комментариев из SQLite */}
+        {comments.length === 0 ? (
+          <View style={styles.emptyCommentsBox}>
+            <Text style={styles.emptyCommentsText}>
+              Пока нет комментариев. Оставьте первый ответ в сети!
+            </Text>
           </View>
+        ) : (
+          comments.map((comment) => {
+            const isOP = comment.author_id === post.author_id;
+            const isIndented = comment.depth > 0;
 
-          {/* Вложенная ветка: Комментарий 2 (Nova) и Комментарий 3 (Kira Vance OP) */}
-          <View style={styles.nestedThread}>
-            {/* Вертикальная направляющая линия ветки */}
-            <View style={styles.threadLinePurple} />
-
-            <View style={styles.nestedCardsColumn}>
-              {/* Комментарий 2: Nova */}
-              <View style={styles.commentCard}>
+            return (
+              <View
+                key={comment.id}
+                style={[
+                  styles.commentCard,
+                  isIndented && {
+                    marginLeft: 22 * comment.depth,
+                    borderLeftColor: isOP ? colors.mint : colors.purple,
+                    borderLeftWidth: 2,
+                    paddingLeft: 12,
+                  },
+                ]}
+              >
                 <View style={styles.commentHeader}>
-                  <Image source={require('../../assets/avatar-nova.png')} style={styles.cAvatar} />
-                  <View style={styles.cAuthorInfo}>
-                    <Text style={styles.cAuthorName}>Nova</Text>
-                    <Text style={styles.cAuthorMeta}>@dev_nova • 42м назад</Text>
+                  <View style={styles.commentAvatarBox}>
+                    <Image
+                      source={getAvatarSource(comment.author.avatar_key)}
+                      style={styles.commentAvatar}
+                    />
                   </View>
-                </View>
 
-                <Text style={styles.commentText}>
-                  Именно. Выполнение тензоров на устройстве быстрее 2 мс открывает пайплайны "голос-логика" в реальном времени.
-                </Text>
-
-                <View style={styles.commentFooter}>
-                  <TouchableOpacity style={styles.cVoteBtn} activeOpacity={0.7}>
-                    <ArrowUpVoteIcon size={12} color={colors.mint} />
-                    <Text style={styles.cVoteText}>+154</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.cReplyBtn} activeOpacity={0.7}>
-                    <Text style={styles.cReplyText}>↩ Ответить</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Комментарий 3 (глубже вложенный, ответ автора OP) */}
-              <View style={styles.subNestedThread}>
-                <View style={styles.threadLineMint} />
-
-                <View style={[styles.commentCard, styles.commentCardOP]}>
-                  <View style={styles.commentHeader}>
-                    <Image source={require('../../assets/avatar-kira-small.png')} style={styles.cAvatar} />
-                    <View style={styles.cAuthorInfo}>
-                      <View style={styles.opHeaderRow}>
-                        <Text style={styles.cAuthorName}>Kira Vance</Text>
+                  <View style={styles.commentAuthorMeta}>
+                    <View style={styles.cNameRow}>
+                      <Text style={styles.commentAuthorName}>{comment.author.name}</Text>
+                      {comment.author.verified && <VerifiedBadge size={12} />}
+                      {isOP && (
                         <View style={styles.opBadge}>
                           <Text style={styles.opBadgeText}>OP</Text>
                         </View>
-                        <Text style={styles.cAuthorMeta}>18м назад</Text>
-                      </View>
+                      )}
                     </View>
+                    <Text style={styles.commentHandle}>{comment.author.handle}</Text>
                   </View>
 
-                  <Text style={styles.commentText}>
-                    Вчера тестировали пограничные узлы, бенчмарки подтвердились. Таблица логов уже в git.
-                  </Text>
+                  <TouchableOpacity style={styles.commentMoreBtn}>
+                    <MoreDotsIcon size={14} color={colors.textDim} />
+                  </TouchableOpacity>
+                </View>
 
-                  <View style={styles.commentFooter}>
-                    <TouchableOpacity style={styles.cVoteBtn} activeOpacity={0.7}>
-                      <ArrowUpVoteIcon size={12} color={colors.mint} />
-                      <Text style={styles.cVoteText}>+89</Text>
-                    </TouchableOpacity>
+                <Text style={styles.commentContent}>{comment.content}</Text>
 
-                    <TouchableOpacity style={styles.cReplyBtn} activeOpacity={0.7}>
-                      <Text style={styles.cReplyText}>↩ Ответить</Text>
-                    </TouchableOpacity>
-                  </View>
+                <View style={styles.commentFooter}>
+                  <TouchableOpacity
+                    style={[styles.cVotePill, comment.isUpvoted && styles.cVotePillActive]}
+                    onPress={() => handleCommentVote(comment.id)}
+                    activeOpacity={0.7}
+                  >
+                    <ArrowUpVoteIcon
+                      size={11}
+                      color={comment.isUpvoted ? colors.mint : colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.cVoteCount,
+                        comment.isUpvoted && { color: colors.mint, fontWeight: '700' },
+                      ]}
+                    >
+                      {formatUpvotes(comment.upvotes)}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.replyBtn}
+                    onPress={() => {
+                      setReplyingToCommentId(comment.id);
+                      setReplyText(`@${comment.author.handle.replace('@', '')} `);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.replyBtnText}>Ответить</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
+            );
+          })
+        )}
 
-            </View>
-          </View>
-
-        </View>
+        <View style={{ height: 100 }} />
       </ScrollView>
 
       {/* Фиксированная нижняя панель ввода ответа */}
       <View style={styles.bottomBar}>
-        <View style={styles.inputContainer}>
+        {replyingToCommentId && (
+          <View style={styles.replyingBar}>
+            <Text style={styles.replyingText}>Ответ на комментарий</Text>
+            <TouchableOpacity onPress={() => setReplyingToCommentId(null)}>
+              <Text style={styles.replyingCancel}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={styles.inputRow}>
           <TextInput
-            style={styles.textInput}
-            placeholder="Ответить @kira_valkyrie..."
-            placeholderTextColor={colors.textDim}
+            style={styles.replyInput}
+            placeholder={`Ответить в ветку...`}
+            placeholderTextColor={colors.textMuted}
             value={replyText}
             onChangeText={setReplyText}
+            multiline
+            maxLength={500}
           />
-          <TouchableOpacity style={styles.smileBtn} activeOpacity={0.7}>
-            <SmileIcon size={17} color={colors.textMuted} />
+
+          <TouchableOpacity
+            style={[styles.sendBtn, (!replyText.trim() || isSending) && styles.sendBtnDisabled]}
+            onPress={handleSendComment}
+            disabled={!replyText.trim() || isSending}
+            activeOpacity={0.8}
+          >
+            {isSending ? (
+              <ActivityIndicator size="small" color="#041E13" />
+            ) : (
+              <PaperPlaneIcon size={16} color="#041E13" />
+            )}
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.sendFab} activeOpacity={0.85}>
-          <PaperPlaneIcon size={16} color={colors.mintTextDark} />
-        </TouchableOpacity>
+        <View style={styles.mediaToolbar}>
+          <TouchableOpacity style={styles.toolIconBtn}>
+            <ImageIcon size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolIconBtn}>
+            <CodeBracketsIcon size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolIconBtn}>
+            <ChartBarIcon size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolIconBtn}>
+            <SmileIcon size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
       </View>
-
-      {/* Вспомогательные иконки вложений под инпутом */}
-      <View style={styles.attachBar}>
-        <TouchableOpacity style={styles.attachBtn}>
-          <ImageIcon size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.attachBtn}>
-          <CodeBracketsIcon size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.attachBtn}>
-          <ChartBarIcon size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-      </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bgApp,
+    backgroundColor: '#0C0D13',
+  },
+  centerBox: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    gap: 12,
+  },
+  loadingText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  backHomeBtn: {
+    backgroundColor: colors.mint,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  backHomeBtnText: {
+    color: '#041E13',
+    fontWeight: '700',
   },
   header: {
     height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     backgroundColor: 'rgba(18, 19, 26, 0.96)',
     borderBottomWidth: 1,
     borderBottomColor: colors.borderMuted,
+    zIndex: 10,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.iconBtnBg,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 6,
   },
   headerCenter: {
     flexDirection: 'row',
@@ -411,7 +544,7 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   headerTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.textWhite,
   },
@@ -421,20 +554,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: colors.iconBtnBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: colors.purpleLight,
+    borderColor: colors.mint,
   },
   avatarImg: {
     width: '100%',
@@ -481,18 +614,17 @@ const styles = StyleSheet.create({
     color: colors.textWhite,
   },
   authorHandle: {
-    fontFamily: 'JetBrains Mono, monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 11,
     color: colors.textMuted,
     marginTop: 2,
   },
   postTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '800',
-    lineHeight: 25,
+    lineHeight: 24,
     color: colors.textWhite,
     marginBottom: 10,
-    letterSpacing: -0.3,
   },
   postBody: {
     fontSize: 13.5,
@@ -528,12 +660,11 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
   },
   codeFilename: {
-    fontFamily: 'JetBrains Mono, monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 10,
     fontWeight: '700',
     color: colors.textDim,
     marginLeft: 6,
-    letterSpacing: 0.5,
   },
   copyBtn: {
     padding: 3,
@@ -541,30 +672,11 @@ const styles = StyleSheet.create({
   codeBody: {
     padding: 12,
   },
-  codeLine: {
-    fontFamily: 'JetBrains Mono, monospace',
+  codeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 11,
-    lineHeight: 18,
-  },
-  cKeyword: {
-    color: '#C084FC',
-    fontWeight: '700',
-  },
-  cFunc: {
-    color: colors.mint,
-    fontWeight: '600',
-  },
-  cPlain: {
-    color: colors.textSecondary,
-  },
-  cIndent: {
-    color: colors.textSecondary,
-  },
-  cString: {
-    color: colors.mint,
-  },
-  cNumber: {
-    color: '#60A5FA',
+    lineHeight: 17,
+    color: '#E2E8F0',
   },
   actionsRow: {
     flexDirection: 'row',
@@ -588,12 +700,9 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   voteCountText: {
-    fontFamily: 'JetBrains Mono, monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 12,
     fontWeight: '700',
-    color: colors.mintTextDark,
-  },
-  voteCountActive: {
     color: colors.mintTextDark,
   },
   actionBtn: {
@@ -603,92 +712,91 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: colors.actionPillBg,
+    backgroundColor: '#181922',
     borderWidth: 1,
-    borderColor: colors.borderMuted,
+    borderColor: colors.borderCard,
+  },
+  actionBtnSaved: {
+    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+    borderColor: colors.purple,
   },
   actionBtnText: {
-    fontSize: 11.5,
-    fontWeight: '600',
+    fontSize: 12,
     color: colors.textSecondary,
+    fontWeight: '600',
   },
-  iconActionBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.actionPillBg,
-    borderWidth: 1,
-    borderColor: colors.borderMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 16,
   },
-  commentsHeaderRow: {
+  commentsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 14,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderMuted,
   },
-  commentsTitleGroup: {
+  commentsCountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 8,
   },
   commentsTitle: {
-    fontSize: 14.5,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.textWhite,
   },
-  commentsBadge: {
-    backgroundColor: 'rgba(0, 245, 160, 0.15)',
-    paddingHorizontal: 6,
+  countBadge: {
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 245, 160, 0.3)',
+    backgroundColor: '#202330',
   },
-  commentsBadgeText: {
-    fontFamily: 'JetBrains Mono, monospace',
+  countBadgeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 10,
     fontWeight: '700',
     color: colors.mint,
   },
-  filterPillsGroup: {
+  filterRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 6,
   },
-  sortPill: {
+  filterBtn: {
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 12,
-    backgroundColor: '#181A24',
+    backgroundColor: '#181922',
   },
-  sortPillActive: {
-    backgroundColor: '#262836',
+  filterBtnActive: {
+    backgroundColor: 'rgba(0, 245, 160, 0.15)',
+    borderWidth: 1,
+    borderColor: colors.mint,
   },
-  sortPillText: {
+  filterBtnText: {
     fontSize: 11,
-    color: colors.textDim,
-  },
-  sortPillTextActive: {
-    color: colors.textWhite,
+    color: colors.textMuted,
     fontWeight: '600',
   },
-  commentsList: {
-    gap: 12,
+  filterBtnTextActive: {
+    color: colors.mint,
   },
-  commentItem: {
-    marginBottom: 4,
+  emptyCommentsBox: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyCommentsText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
   },
   commentCard: {
-    backgroundColor: '#161822',
+    backgroundColor: '#141620',
     borderRadius: 14,
     padding: 12,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: colors.borderMuted,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
   commentHeader: {
     flexDirection: 'row',
@@ -696,28 +804,51 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 6,
   },
-  cAvatar: {
+  commentAvatarBox: {
     width: 28,
     height: 28,
     borderRadius: 14,
+    overflow: 'hidden',
   },
-  cAuthorInfo: {
+  commentAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  commentAuthorMeta: {
     flex: 1,
   },
-  cAuthorName: {
+  cNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  commentAuthorName: {
     fontSize: 13,
     fontWeight: '700',
     color: colors.textWhite,
   },
-  cAuthorMeta: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 9.5,
-    color: colors.textDim,
+  opBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0, 245, 160, 0.15)',
+    borderWidth: 1,
+    borderColor: colors.mint,
   },
-  cMoreBtn: {
-    padding: 3,
+  opBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.mint,
   },
-  commentText: {
+  commentHandle: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 10,
+    color: colors.textMuted,
+  },
+  commentMoreBtn: {
+    padding: 4,
+  },
+  commentContent: {
     fontSize: 12.5,
     lineHeight: 17,
     color: colors.textSecondary,
@@ -726,128 +857,98 @@ const styles = StyleSheet.create({
   commentFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
-  cVoteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#1C202C',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  cVoteText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.mint,
-  },
-  cReplyText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  cReplyBtn: {
-    padding: 3,
-  },
-  nestedThread: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 2,
-  },
-  threadLinePurple: {
-    width: 2,
-    backgroundColor: '#A855F7',
-    borderRadius: 1,
-    marginLeft: 14,
-  },
-  nestedCardsColumn: {
-    flex: 1,
-    gap: 10,
-  },
-  subNestedThread: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  threadLineMint: {
-    width: 2,
-    backgroundColor: colors.mint,
-    borderRadius: 1,
-    marginLeft: 10,
-  },
-  commentCardOP: {
-    flex: 1,
-    borderColor: 'rgba(0, 245, 160, 0.15)',
-  },
-  opHeaderRow: {
+  cVotePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#1B1E2A',
   },
-  opBadge: {
-    backgroundColor: colors.mint,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
+  cVotePillActive: {
+    backgroundColor: 'rgba(0, 245, 160, 0.15)',
+    borderWidth: 1,
+    borderColor: colors.mint,
   },
-  opBadgeText: {
-    fontFamily: 'JetBrains Mono, monospace',
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: colors.mintTextDark,
+  cVoteCount: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 10,
+    color: colors.textSecondary,
+  },
+  replyBtn: {
+    paddingVertical: 4,
+  },
+  replyBtnText: {
+    fontSize: 11,
+    color: colors.mint,
+    fontWeight: '600',
   },
   bottomBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: '#12141C',
     borderTopWidth: 1,
-    borderTopColor: colors.borderMuted,
-    gap: 8,
+    borderTopColor: colors.borderCard,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  inputContainer: {
-    flex: 1,
+  replyingBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 6,
+  },
+  replyingText: {
+    fontSize: 11,
+    color: colors.mint,
+    fontWeight: '600',
+  },
+  replyingCancel: {
+    fontSize: 12,
+    color: colors.textMuted,
+    paddingHorizontal: 6,
+  },
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1C26',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    height: 38,
-    borderWidth: 1,
-    borderColor: colors.borderMuted,
+    gap: 8,
   },
-  textInput: {
+  replyInput: {
     flex: 1,
+    backgroundColor: '#181A24',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     color: colors.textWhite,
-    fontSize: 12,
-    padding: 0,
+    fontSize: 13,
+    maxHeight: 80,
   },
-  smileBtn: {
-    padding: 2,
-  },
-  sendFab: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  sendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.mint,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.mint,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
   },
-  attachBar: {
+  sendBtnDisabled: {
+    opacity: 0.4,
+  },
+  mediaToolbar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingBottom: 8,
-    backgroundColor: '#12141C',
-    gap: 12,
+    gap: 16,
+    marginTop: 6,
+    paddingHorizontal: 4,
   },
-  attachBtn: {
-    padding: 4,
+  toolIconBtn: {
+    padding: 2,
   },
 });

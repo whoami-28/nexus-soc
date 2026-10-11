@@ -4,15 +4,25 @@ import { View, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { colors } from '../theme/colors';
 import { FeedLayersIcon, PlusIcon } from './SvgIcons';
 import { ScreenName } from '../types';
+import { useDatabase } from '../context/DatabaseContext';
+import { getAvatarSource } from '../utils/assets';
 
 interface BottomNavProps {
   currentScreen: ScreenName;
   onNavigate: (screen: ScreenName) => void;
+  onPressCreatePost?: () => void;
 }
 
-export const BottomNav: React.FC<BottomNavProps> = ({ currentScreen, onNavigate }) => {
+export const BottomNav: React.FC<BottomNavProps> = ({
+  currentScreen,
+  onNavigate,
+  onPressCreatePost,
+}) => {
+  const { currentUser } = useDatabase();
+
   return (
     <View style={styles.container}>
+      {/* 1. Иконка ленты */}
       <TouchableOpacity
         style={styles.navItem}
         onPress={() => onNavigate('feed')}
@@ -22,14 +32,16 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentScreen, onNavigate 
         {currentScreen === 'feed' && <View style={styles.activeDot} />}
       </TouchableOpacity>
 
+      {/* 2. Кнопка + (FAB) создания нового поста */}
       <TouchableOpacity
         style={styles.fabBtn}
-        onPress={() => onNavigate('thread')}
+        onPress={onPressCreatePost || (() => onNavigate('thread'))}
         activeOpacity={0.85}
       >
         <PlusIcon size={24} color={colors.mintTextDark} />
       </TouchableOpacity>
 
+      {/* 3. Аватар профиля */}
       <TouchableOpacity
         style={[
           styles.profileItem,
@@ -39,7 +51,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentScreen, onNavigate 
         activeOpacity={0.7}
       >
         <Image
-          source={require('../../assets/avatar-user.png')}
+          source={getAvatarSource(currentUser?.avatar_key)}
           style={styles.avatarImg}
         />
       </TouchableOpacity>
@@ -84,18 +96,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: colors.mint,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
     shadowRadius: 10,
-    elevation: 6,
+    elevation: 8,
+    marginTop: -16,
   },
   profileItem: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    padding: 1.5,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 1.5,
     borderColor: 'transparent',
+    overflow: 'hidden',
   },
   profileItemActive: {
     borderColor: colors.mint,
@@ -107,6 +120,6 @@ const styles = StyleSheet.create({
   avatarImg: {
     width: '100%',
     height: '100%',
-    borderRadius: 15,
+    resizeMode: 'cover',
   },
 });
